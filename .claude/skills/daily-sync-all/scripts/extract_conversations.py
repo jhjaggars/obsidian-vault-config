@@ -329,11 +329,12 @@ def extract_email_conversations(target_date: str) -> list[dict]:
             continue
 
         # Skip mailing lists
-        if is_mailing_list_to(to_addr) and MY_EMAIL not in to_addr and MY_EMAIL_ALT not in to_addr:
+        i_am_to = (bool(MY_EMAIL) and MY_EMAIL in to_addr) or (bool(MY_EMAIL_ALT) and MY_EMAIL_ALT in to_addr)
+        if is_mailing_list_to(to_addr) and not i_am_to:
             continue
 
         from_lower = from_addr.lower()
-        is_from_me = MY_EMAIL in from_lower or MY_EMAIL_ALT in from_lower
+        is_from_me = bool(MY_EMAIL) and MY_EMAIL in from_lower or bool(MY_EMAIL_ALT) and MY_EMAIL_ALT in from_lower
 
         # Determine the other person in the conversation
         if is_from_me:

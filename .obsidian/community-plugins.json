@@ -8,9 +8,9 @@
   "obsidian-itinerary",
   "obsidian-style-settings",
   "obsidian-importer",
-  "obsidian-link-embed",
-  "obsidian-copy-block-link",
   "obsidian-omnivore",
   "obsidian-tasks-plugin",
-  "obsidian-kanban"
+  "obsidian-kanban",
+  "emoji-shortcodes",
+  "obsidian-emoji-toolbar"
 ]
