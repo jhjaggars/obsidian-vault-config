@@ -1,0 +1,49 @@
+# Ignore everything by default
+*
+
+# Allow this file to be tracked
+!.gitignore
+
+# Allow .obsidian/ config
+!.obsidian/
+!.obsidian/*.json
+!.obsidian/snippets/
+!.obsidian/snippets/**
+!.obsidian/themes/
+!.obsidian/themes/**
+!.obsidian/plugins/
+!.obsidian/plugins/*/
+!.obsidian/plugins/*/*.json
+!.obsidian/plugins/*/*.css
+!.obsidian/plugins/*/*.js
+
+# Allow .claude/ config
+!.claude/
+!.claude/**
+
+# Allow root config files
+!CLAUDE.md
+!.stignore
+
+# Exclude within .obsidian/
+# AnuPpuccin has an embedded .git (cloned from GitHub) — reinstall via Obsidian community themes
+.obsidian/themes/AnuPpuccin/
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/plugins/obsidian-local-rest-api/data.json
+.obsidian/plugins/obsidian-omnivore/data.json
+.obsidian/plugins/google-calendar/data.json
+.obsidian/plugins/recent-files-obsidian/data.json
+
+# Exclude within .claude/
+.claude/.last-periodic-sync
+.claude/logs/
+.claude/skills/daily-sync-all/staging/
+.claude/settings.local.json
+.claude/launchagents.env
+
+# General exclusions
+*.sync-conflict-*
+__pycache__/
+*.pyc
+.DS_Store
