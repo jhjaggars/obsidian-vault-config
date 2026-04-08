@@ -1,0 +1,18 @@
+{
+  "templater-obsidian:Templates/Meeting Link.md": [
+    {
+      "modifiers": [
+        "Alt"
+      ],
+      "key": "M"
+    }
+  ],
+  "templater-obsidian:insert-Templates/Meeting Link.md": [
+    {
+      "modifiers": [
+        "Alt"
+      ],
+      "key": "M"
+    }
+  ]
+}

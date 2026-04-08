@@ -1,0 +1,10 @@
+// Ignore git internals - these should never be synced
+.git
+
+// macOS metadata
+.DS_Store
+
+// Obsidian workspace state changes constantly and causes conflicts
+.obsidian/workspace
+.obsidian/workspace.json
+.obsidian/cache

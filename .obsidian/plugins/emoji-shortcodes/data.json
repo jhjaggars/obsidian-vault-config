@@ -1,0 +1,16 @@
+{
+  "immediateReplace": true,
+  "suggester": true,
+  "historyPriority": true,
+  "historyLimit": 100,
+  "history": [
+    ":clock1030:",
+    ":joy:",
+    ":calendar:",
+    ":white_check_mark:",
+    ":heavy_minus_sign:",
+    ":takeout_box:",
+    ":warning:",
+    ":star:"
+  ]
+}
