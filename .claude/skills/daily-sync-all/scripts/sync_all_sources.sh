@@ -162,6 +162,25 @@ else
     log "WARNING: $AGENT_RUNNER not found, skipping daily-curator"
 fi
 
+# Step 7.5: Build people dossiers (today's meeting attendees + DM partners)
+step "Step 7.5/8: People dossier updates"
+DOSSIER_EXTRACT="$VAULT_DIR/.claude/skills/people-dossier/scripts/build_dossier.py"
+if [ -f "$DOSSIER_EXTRACT" ]; then
+    DOSSIER_JSON=$("$UV" run "$DOSSIER_EXTRACT" "$VAULT_DIR" --mode daily 2>&1 | tail -1) \
+        || log "WARNING: dossier extraction had errors (non-fatal)"
+    if [ -n "$DOSSIER_JSON" ] && [ -f "$DOSSIER_JSON" ]; then
+        (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
+            dossier-synthesizer \
+            "Synthesize people dossiers from $DOSSIER_JSON" \
+            2>&1) \
+            || log "WARNING: dossier-synthesizer agent had errors (non-fatal)"
+    else
+        log "WARNING: dossier extraction produced no output file, skipping synthesizer"
+    fi
+else
+    log "WARNING: $DOSSIER_EXTRACT not found, skipping people dossier"
+fi
+
 # Step 8: Extract and summarize today's conversations (Slack DMs + email)
 step "Step 8/8: Conversation sync"
 CONV_EXTRACT="$SKILL_DIR/scripts/extract_conversations.py"

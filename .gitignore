@@ -39,6 +39,7 @@
 .claude/.last-periodic-sync
 .claude/logs/
 .claude/skills/daily-sync-all/staging/
+.claude/skills/people-dossier/staging/
 .claude/settings.local.json
 .claude/launchagents.env
 
