@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Pipeline Metrics</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --orange: #d29922; --purple: #bc8cff;
+    --blue: #58a6ff; --cyan: #39d353; --pink: #f778ba;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 14px; }
+
+  header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 12px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+
+  .stats { display: flex; gap: 24px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .stat { display: flex; flex-direction: column; }
+  .stat-value { font-size: 22px; font-weight: 600; color: var(--accent); }
+  .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
+  .panel { background: var(--surface); padding: 20px; }
+  .panel.full { grid-column: 1 / -1; }
+  .panel h2 { font-size: 14px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .panel h2 select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; font-size: 12px; }
+
+  .chart-wrap { position: relative; height: 280px; }
+  .chart-wrap.tall { height: 340px; }
+
+  .error-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .error-table th { text-align: left; padding: 8px 12px; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+  .error-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .error-table tr.err td { color: var(--red); }
+  .error-table tr.warn td { color: var(--orange); }
+  .error-section { display: grid; grid-template-columns: 160px 1fr; gap: 20px; align-items: start; }
+  .donut-wrap { width: 140px; height: 140px; margin-top: 8px; }
+
+  .context-key { display: flex; gap: 16px; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); }
+  .context-key span { display: flex; align-items: center; gap: 4px; }
+  .context-key .swatch { width: 12px; height: 3px; border-radius: 1px; display: inline-block; }
+
+  .empty { color: var(--text-muted); font-style: italic; padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Agent Pipeline Metrics</h1>
+  <select id="timeRange">
+    <option value="7">Last 7 days</option>
+    <option value="30" selected>Last 30 days</option>
+    <option value="90">Last 90 days</option>
+    <option value="365">All time</option>
+  </select>
+</header>
+
+<div class="stats" id="statsBar">
+  <div class="stat"><span class="stat-value" id="statRuns">—</span><span class="stat-label">Runs</span></div>
+  <div class="stat"><span class="stat-value" id="statAgents">—</span><span class="stat-label">Agents</span></div>
+  <div class="stat"><span class="stat-value" id="statCost">—</span><span class="stat-label">Est. Cost</span></div>
+  <div class="stat"><span class="stat-value" id="statSuccess">—</span><span class="stat-label">Success Rate</span></div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Token Usage by Model</h2>
+    <div class="chart-wrap"><canvas id="tokenChart"></canvas></div>
+  </div>
+  <div class="panel">
+    <h2>Tok/s Comparison</h2>
+    <div class="chart-wrap"><canvas id="tokpsChart"></canvas></div>
+  </div>
+  <div class="panel full">
+    <h2>Context Growth per Turn <select id="contextFilter"><option value="">All agents</option></select></h2>
+    <div class="context-key" id="contextKey"></div>
+    <div class="chart-wrap tall"><canvas id="contextChart"></canvas></div>
+  </div>
+  <div class="panel">
+    <h2>Daily Cost Estimate</h2>
+    <div class="chart-wrap"><canvas id="costChart"></canvas></div>
+  </div>
+  <div class="panel">
+    <h2>Tool Usage by Agent</h2>
+    <div class="chart-wrap"><canvas id="toolChart"></canvas></div>
+  </div>
+  <div class="panel full">
+    <h2>Errors &amp; Max-Turns Runs</h2>
+    <div class="error-section">
+      <div class="donut-wrap"><canvas id="errorDonut"></canvas></div>
+      <div id="errorTableWrap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  agents: {
+    'project-tracker': '#58a6ff',
+    'daily-curator': '#d29922',
+    'conversation-summarizer': '#3fb950',
+    'dossier-synthesizer': '#bc8cff',
+  },
+  models: ['#58a6ff', '#3fb950', '#d29922', '#bc8cff', '#f778ba', '#39d353'],
+  tools: {
+    Bash: '#58a6ff', Read: '#3fb950', Edit: '#d29922', Glob: '#bc8cff',
+    Grep: '#f778ba', Write: '#39d353', ReplaceSection: '#f0883e',
+  },
+};
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#30363d';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+
+const charts = {};
+let contextData = [];
+
+function modelLabel(d) { return `${d.provider}/${d.model}`; }
+
+async function fetchJson(endpoint, days) {
+  const sep = endpoint.includes('?') ? '&' : '?';
+  const url = days ? `/api/${endpoint}${sep}days=${days}` : `/api/${endpoint}`;
+  const r = await fetch(url);
+  return r.json();
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+function renderSummary(data) {
+  document.getElementById('statRuns').textContent = data.total_runs ?? 0;
+  document.getElementById('statAgents').textContent = data.agents ?? 0;
+  const cost = data.est_cost_usd != null ? `$${data.est_cost_usd.toFixed(2)}` : '$0.00';
+  document.getElementById('statCost').textContent = cost;
+  const total = (data.successes ?? 0) + (data.failures ?? 0);
+  const rate = total > 0 ? ((data.successes / total) * 100).toFixed(0) + '%' : '—';
+  document.getElementById('statSuccess').textContent = rate;
+}
+
+function renderTokens(data) {
+  destroyChart('tokenChart');
+  if (!data.length) return;
+  const labels = data.map(modelLabel);
+  charts.tokenChart = new Chart(document.getElementById('tokenChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Prompt', data: data.map(d => d.total_prompt), backgroundColor: '#58a6ff' },
+        { label: 'Completion', data: data.map(d => d.total_completion), backgroundColor: '#d29922' },
+        { label: 'Thinking', data: data.map(d => d.total_thinking), backgroundColor: '#bc8cff' },
+      ],
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked: false, ticks: { callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : v } } },
+      plugins: { legend: { position: 'bottom' } },
+    },
+  });
+}
+
+function renderTokps(data) {
+  destroyChart('tokpsChart');
+  if (!data.length) return;
+  const labels = data.map(modelLabel);
+  const datasets = [
+    { label: 'Wall tok/s', data: data.map(d => d.wall_tok_per_s), backgroundColor: '#58a6ff' },
+  ];
+  if (data.some(d => d.native_tok_per_s != null)) {
+    datasets.push({ label: 'Native tok/s', data: data.map(d => d.native_tok_per_s), backgroundColor: '#3fb950' });
+  }
+  charts.tokpsChart = new Chart(document.getElementById('tokpsChart'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+    },
+  });
+}
+
+function contextLabel(run) {
+  const step = run.pipeline_step
+    ? run.pipeline_step.replace(/^step_/, '').replace(/_/g, ' ')
+    : run.agent_name;
+  const trigger = run.trigger || 'unknown';
+  const date = run.run_date || '';
+  const model = run.model.replace('claude-', '');
+  return `${step} [${trigger}] ${model} ${date}`;
+}
+
+function renderContext(data, filter) {
+  destroyChart('contextChart');
+  const filterSelect = document.getElementById('contextFilter');
+  const agents = [...new Set(data.map(d => d.agent_name))].sort();
+
+  if (filterSelect.options.length <= 1) {
+    agents.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a; opt.textContent = a;
+      filterSelect.appendChild(opt);
+    });
+  }
+
+  const keyEl = document.getElementById('contextKey');
+  keyEl.innerHTML = agents.map(a =>
+    `<span><span class="swatch" style="background:${COLORS.agents[a] || '#8b949e'}"></span>${a}</span>`
+  ).join('');
+
+  let filtered = data;
+  if (filter) filtered = data.filter(d => d.agent_name === filter);
+
+  if (!filtered.length) return;
+
+  const maxTurns = Math.max(...filtered.map(d => d.turns.length));
+  const labels = Array.from({length: maxTurns}, (_, i) => i + 1);
+
+  const datasets = filtered.map((run, i) => ({
+    label: contextLabel(run),
+    data: run.turns.map(t => ({ x: t.turn_number, y: t.prompt_tokens })),
+    borderColor: COLORS.agents[run.agent_name] || COLORS.models[i % COLORS.models.length],
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    pointRadius: 2,
+    tension: 0.3,
+  }));
+
+  charts.contextChart = new Chart(document.getElementById('contextChart'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: 'Turn' } },
+        y: { title: { display: true, text: 'Prompt Tokens' },
+             ticks: { callback: v => v >= 1e3 ? (v/1e3).toFixed(0)+'K' : v } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => items.length ? items[0].dataset.label : '',
+            label: item => `Turn ${item.parsed.x}: ${item.parsed.y >= 1e3 ? (item.parsed.y/1e3).toFixed(1)+'K' : item.parsed.y} tokens`,
+          },
+        },
+      },
+      interaction: { mode: 'nearest', intersect: false },
+    },
+  });
+}
+
+function renderCost(data) {
+  destroyChart('costChart');
+  if (!data.length) return;
+  const sorted = [...data].reverse();
+  const labels = sorted.map(d => d.run_date);
+  let cumulative = 0;
+  const cumData = sorted.map(d => { cumulative += d.est_cost_usd; return +cumulative.toFixed(4); });
+
+  charts.costChart = new Chart(document.getElementById('costChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Daily Cost ($)', data: sorted.map(d => d.est_cost_usd),
+          backgroundColor: '#58a6ff', yAxisID: 'y', order: 2 },
+        { label: 'Cumulative ($)', data: cumData, type: 'line',
+          borderColor: '#d29922', backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 3, yAxisID: 'y1', order: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'Daily $' } },
+        y1: { position: 'right', title: { display: true, text: 'Cumulative $' }, grid: { drawOnChartArea: false } },
+      },
+      plugins: { legend: { position: 'bottom' } },
+    },
+  });
+}
+
+function renderTools(data) {
+  destroyChart('toolChart');
+  if (!data.length) return;
+  const labels = data.map(d => `${d.agent_name}\n(${d.model})`);
+  const allTools = [...new Set(data.flatMap(d => Object.keys(d.tools)))].sort();
+
+  const datasets = allTools.map(tool => ({
+    label: tool,
+    data: data.map(d => d.tools[tool] || 0),
+    backgroundColor: COLORS.tools[tool] || '#8b949e',
+  }));
+
+  charts.toolChart = new Chart(document.getElementById('toolChart'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'Tool Calls' } } },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+    },
+  });
+}
+
+function renderErrors(data, summary) {
+  destroyChart('errorDonut');
+  const wrap = document.getElementById('errorTableWrap');
+
+  const successes = summary.successes ?? 0;
+  const failures = summary.failures ?? 0;
+
+  charts.errorDonut = new Chart(document.getElementById('errorDonut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Success', 'Failed'],
+      datasets: [{ data: [successes, failures], backgroundColor: ['#3fb950', '#f85149'], borderWidth: 0 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: { legend: { display: false } },
+    },
+  });
+
+  if (!data.length) {
+    wrap.innerHTML = '<p class="empty">No errors recorded</p>';
+    return;
+  }
+
+  let html = `<table class="error-table">
+    <thead><tr><th>Date</th><th>Agent</th><th>Model</th><th>Turns</th><th>Reason</th><th>Error</th><th>Wall (s)</th></tr></thead><tbody>`;
+  data.forEach(d => {
+    const cls = d.error_message ? 'err' : d.stop_reason === 'max_turns' ? 'warn' : '';
+    const err = d.error_message ? (d.error_message.length > 60 ? d.error_message.slice(0, 60) + '...' : d.error_message) : '—';
+    html += `<tr class="${cls}"><td>${d.run_date}</td><td>${d.agent_name}</td><td>${d.model}</td><td>${d.total_turns}</td><td>${d.stop_reason}</td><td>${err}</td><td>${d.wall_time_s}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+async function loadAll() {
+  const days = document.getElementById('timeRange').value;
+  const [summary, tokens, tokps, context, cost, errors, tools] = await Promise.all([
+    fetchJson('summary'), fetchJson('tokens', days), fetchJson('tokps', days),
+    fetchJson('context', days), fetchJson('cost', days), fetchJson('errors'),
+    fetchJson('tools', days),
+  ]);
+  renderSummary(summary);
+  renderTokens(tokens);
+  renderTokps(tokps);
+  contextData = context;
+  renderContext(context, document.getElementById('contextFilter').value);
+  renderCost(cost);
+  renderTools(tools);
+  renderErrors(errors, summary);
+}
+
+document.getElementById('timeRange').addEventListener('change', loadAll);
+document.getElementById('contextFilter').addEventListener('change', e => {
+  renderContext(contextData, e.target.value);
+});
+
+loadAll();
+</script>
+</body>
+</html>
