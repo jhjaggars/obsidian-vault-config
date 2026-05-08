@@ -31,10 +31,14 @@ ANTHROPIC_DEFAULT_SONNET_MODEL="${ANTHROPIC_DEFAULT_SONNET_MODEL:-claude-sonnet-
 ANTHROPIC_DEFAULT_OPUS_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL:-claude-opus-4-6}"
 ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-claude-haiku-4-6}"
 
+DASHBOARD_VENV="${HOME}/.local/share/agent-metrics-dashboard/.venv"
+DASHBOARD_PORT="${DASHBOARD_PORT:-9847}"
+
 LABELS=(
     "com.user.daily-work-sync"
     "com.user.sync-watchdog"
     "com.user.weekly-gap-analysis"
+    "com.user.agent-metrics-dashboard"
 )
 
 plist_file() { echo "$LAUNCHAGENTS_DIR/$1.plist"; }
@@ -193,6 +197,55 @@ generate_weekly_gap_analysis() {
 EOF
 }
 
+generate_agent_metrics_dashboard() {
+    cat > "$(plist_file com.user.agent-metrics-dashboard)" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.agent-metrics-dashboard</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>${DASHBOARD_VENV}/bin/python</string>
+        <string>${VAULT_DIR}/.claude/skills/agent-metrics-dashboard/scripts/dashboard.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>${VAULT_DIR}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${AGENT_PATH}</string>
+        <key>HOME</key>
+        <string>${HOME}</string>
+    </dict>
+
+    <key>Sockets</key>
+    <dict>
+        <key>MetricsSock</key>
+        <dict>
+            <key>SockServiceName</key>
+            <string>${DASHBOARD_PORT}</string>
+            <key>SockType</key>
+            <string>stream</string>
+            <key>SockFamily</key>
+            <string>IPv4</string>
+        </dict>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>${HOME}/Library/Logs/daily-work-sync/metrics-dashboard-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>${HOME}/Library/Logs/daily-work-sync/metrics-dashboard-stderr.log</string>
+</dict>
+</plist>
+EOF
+}
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -234,10 +287,17 @@ cmd_install() {
     mkdir -p "$HOME/Library/Logs/daily-work-sync"
     mkdir -p "$HOME/Library/Logs/weekly-gap-analysis"
 
+    echo "Setting up metrics dashboard venv..."
+    if [[ ! -x "${DASHBOARD_VENV}/bin/python" ]]; then
+        uv venv "$DASHBOARD_VENV" 2>&1
+        uv pip install --python "${DASHBOARD_VENV}/bin/python" flask 2>&1
+    fi
+
     echo "Generating plists..."
     generate_daily_work_sync
     generate_sync_watchdog
     generate_weekly_gap_analysis
+    generate_agent_metrics_dashboard
 
     echo "Loading agents..."
     local uid
