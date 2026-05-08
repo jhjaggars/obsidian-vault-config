@@ -21,6 +21,10 @@
 !.claude/
 !.claude/**
 
+# Allow Templates
+!Templates/
+!Templates/*.md
+
 # Allow root config files
 !CLAUDE.md
 !.stignore
