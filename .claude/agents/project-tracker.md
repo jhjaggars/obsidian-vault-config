@@ -276,7 +276,7 @@ Scan the project note content for deadline-bearing sections:
 
 For each JIRA issue matched to the project in step 2b, query for target end dates:
 ```bash
-jira issue view <KEY> --raw 2>/dev/null | python3 /Users/jjaggars/ObsidianVault/.claude/skills/daily-sync-all/scripts/jira_deadlines.py
+jira issue view <KEY> --raw 2>/dev/null | python3 .claude/skills/daily-sync-all/scripts/jira_deadlines.py
 ```
 
 Only query JIRA live for issues in the **Early** and **Mature** columns (skip Ideas — they rarely have dates). Batch queries where possible. Skip gracefully if the `jira` CLI is unavailable.
@@ -503,10 +503,12 @@ Format:
 - **Wiki-link JIRA keys:** When referencing JIRA issue keys (e.g., `HCMSTRAT-15`), link as `[[jira/KEY|KEY]]` if a matching `jira/*.md` file exists, or `[[KEY]]` otherwise.
 - **Wiki-link projects/software:** When referencing well-known project or software names that have vault pages (e.g., `ROSA`, `Konflux`, `RHOBS`), wrap them in `[[wiki-links]]`.
 
-**Idempotency rules:**
-1. If `### Meeting Prep` already exists, replace from that heading to the next `###` heading
-2. If not found, insert between `### Meetings` and `### Digest`
-3. Never touch content outside this section
+**Writing the section:**
+Daily notes use section markers. Use the `ReplaceSection` tool:
+```
+ReplaceSection(file_path="<daily note path>", section="meeting-prep", content="### Meeting Prep\n\n> [!info] ...\n\n#### Meeting Title (Time)\n- ...")
+```
+If section markers are not present, fall back to the Edit tool.
 
 ---
 
@@ -600,23 +602,16 @@ Format:
 
 ### 4d. Insert Into Daily Note
 
-Insert both `### Active Projects` and `### Upcoming Deadlines` sections into the daily note.
+Daily notes use section markers. Use the `ReplaceSection` tool for each section:
 
-**Placement order** (between `### Action Items` and `### Todo`):
-1. `### Active Projects`
-2. `### Upcoming Deadlines`
+```
+ReplaceSection(file_path="<daily note path>", section="active-projects", content="### Active Projects\n\n> [!info] ...\n\n**Work — Early**\n- ...")
+ReplaceSection(file_path="<daily note path>", section="upcoming-deadlines", content="### Upcoming Deadlines\n\n> [!info] ...\n\n**Overdue**\n- ...")
+```
 
-**Idempotency rules:**
+If the daily note does not have section markers, fall back to the Edit tool.
 
-For `### Active Projects`:
-1. If it already exists, replace from that heading to the next `###` heading
-2. If not found, insert between `### Action Items` and `### Todo`
-
-For `### Upcoming Deadlines`:
-1. If it already exists, replace from that heading to the next `###` heading
-2. If not found, insert immediately after the `### Active Projects` section (before `### Todo`)
-
-3. **Never touch any content outside these sections**
+**Never touch any content outside these sections.**
 
 ---
 

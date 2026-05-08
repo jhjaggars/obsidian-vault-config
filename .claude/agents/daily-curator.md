@@ -162,13 +162,19 @@ Format:
 
 ## Step 11: Insert Into Daily Note
 
-**Placement:** `### Digest` and `### Action Items` go between `### Meeting Prep` (or `### Meetings` if no prep section) and `### Active Projects`.
+Daily notes use section markers (e.g. `%% section:digest %%` / `%% /section:digest %%`).
 
-**Idempotency:**
-1. If `### Digest` already exists, replace from that heading to `### Active Projects` (exclusive)
-2. If not found, insert between `### Meeting Prep`/`### Meetings` and `### Active Projects`
-3. Always preserve `- [x]` completed items from the old `### Action Items` — append them after the new unchecked items
-4. Never touch `### Meetings`, `### Meeting Prep`, `### Active Projects`, `### Upcoming Deadlines`, or `### Todo`
+**Use the `ReplaceSection` tool** for each section:
+```
+ReplaceSection(file_path="<daily note path>", section="digest", content="### Digest\n\n> [!info] Auto-curated on ...\n\n**Action Required**\n- ...")
+ReplaceSection(file_path="<daily note path>", section="action-items", content="### Action Items\n\n- [ ] ...\n- [x] preserved completed item")
+```
+
+**Preserve checked items:** Before writing Action Items, read the current section and collect any `- [x]` lines. Append them at the bottom of the new content.
+
+**If the daily note does not have section markers**, fall back to the Edit tool.
+
+**Never touch other sections** — only update `digest` and `action-items`.
 
 ---
 

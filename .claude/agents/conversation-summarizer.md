@@ -142,15 +142,18 @@ For threads: don't wiki-link participants listed in the parenthetical — just u
 
 ## Step 6: Insert into Daily Note
 
-**Idempotency logic:**
+Daily notes use section markers: `%% section:conversations %%` and `%% /section:conversations %%`.
 
-1. Check if `### Conversations` already exists in the daily note
-2. **If it exists:** Replace everything from `### Conversations` up to (but not including) the next `###` heading
-3. **If not:** Insert after `### Action Items` and before `### Active Projects` (or before `### Todo` if Active Projects doesn't exist yet)
+**Use the `ReplaceSection` tool** to update the conversations section:
+```
+ReplaceSection(file_path="<daily note path>", section="conversations", content="### Conversations\n\n> [!info] Auto-updated on ...\n\n- ...")
+```
 
-Use the Edit tool for replacement. Be careful to match the exact existing text including any trailing newlines.
+The `content` parameter should include the `### Conversations` heading, the info callout, and all bullet points. The tool handles finding and replacing between the markers automatically.
 
-**Never touch:** `### Meetings`, `### Meeting Prep`, `### Digest`, `### Action Items`, `### Active Projects`, `### Upcoming Deadlines`, `### Todo`
+**If the daily note does not have section markers**, fall back to the Edit tool: find `### Conversations` and replace up to the next `###` heading.
+
+**Never touch other sections** — the ReplaceSection tool only modifies the content between the specified markers.
 
 ---
 

@@ -1,0 +1,193 @@
+description: "Summarization quality — conversation summaries and dossier synthesis"
+
+prompts:
+  - file://prompts/system-user.json
+
+providers:
+  - id: vertex:claude-sonnet-4-6
+    label: claude-sonnet
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
+  - id: vertex:claude-opus-4-6
+    label: claude-opus
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
+  - id: ollama:chat:gemma4:e4b
+    label: gemma4-e4b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+
+  - id: ollama:chat:gemma4:26b
+    label: gemma4-26b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+
+
+defaultTest:
+  options:
+    provider:
+      id: vertex:claude-sonnet-4-6
+      config:
+        projectId: itpc-gcp-hcm-pe-eng-claude
+        region: us-east5
+        anthropic_version: vertex-2023-10-16
+        max_tokens: 1024
+
+tests:
+  # Test 1: Slack DM summary — should produce a single concise topic line
+  - vars:
+      system_prompt: |
+        You are a conversation summarizer. Given a list of Slack DM messages between two people,
+        produce a single concise line (~15 words max) capturing the topic(s) discussed.
+        Use semicolons to separate distinct sub-topics within one conversation.
+        Focus on work topics, not pleasantries. Be topic-focused, not message-count-focused.
+      user_message: |
+        Summarize this DM conversation with Alex Chen:
+
+        Alex Chen: hey, did you see the PR for the etcd sharding change?
+        Jesse Jaggars: yeah, looking at it now. the partition key logic seems right but I'm not sure about the migration path
+        Alex Chen: agreed. we should probably add a feature gate for the rollout
+        Jesse Jaggars: makes sense. let me check what the operator upgrade path looks like
+        Alex Chen: also wanted to mention — the CI is flaky on the e2e tests again. same timeout issue from last week
+        Jesse Jaggars: ugh. which test suite?
+        Alex Chen: the hosted control plane provisioning tests. timeout waiting for the hosted cluster to become available
+        Jesse Jaggars: I'll take a look. might be the webhook cert rotation issue
+        Alex Chen: could be. the cert-manager pod was restarting in the last failure
+        Jesse Jaggars: let me check the prow logs
+        Alex Chen: thanks. oh btw, are you going to the team offsite next month?
+        Jesse Jaggars: yeah planning on it
+    assert:
+      - type: llm-rubric
+        value: |
+          The summary should:
+          1. Capture both main work topics: etcd sharding PR review AND CI flakiness/e2e test timeouts
+          2. Be a single line, roughly 15 words or fewer
+          3. NOT mention the offsite/social chat
+          4. Use semicolons to separate topics if multiple
+      - type: javascript
+        value: |
+          const words = output.trim().split(/\s+/).length;
+          if (words > 25) throw new Error(`Summary is ${words} words, should be ~15 or fewer`);
+          return true;
+
+  # Test 2: Email summary
+  - vars:
+      system_prompt: |
+        You are a conversation summarizer. Given an email, produce a single concise line
+        capturing the key topic and any action requested. Be brief and specific.
+      user_message: |
+        Summarize this email:
+
+        Subject: Re: Q3 OKR alignment — platform team
+        From: Sam Taylor
+        Body: Updated the shared doc with our proposed OKRs. Key change: moved 'multi-cluster observability'
+        from stretch to committed based on the RHOBS progress. Please review by Friday.
+    assert:
+      - type: llm-rubric
+        value: |
+          The summary should:
+          1. Mention OKRs or Q3 planning
+          2. Note the key change (observability moved from stretch to committed)
+          3. Include the action request (review by Friday)
+          4. Be a single concise line
+      - type: javascript
+        value: |
+          const words = output.trim().split(/\s+/).length;
+          if (words > 30) throw new Error(`Summary is ${words} words, too long`);
+          return true;
+
+  # Test 3: Dossier Current Work synthesis
+  - vars:
+      system_prompt: |
+        You are a dossier synthesizer. Given data about a person's recent activity (Slack messages,
+        emails, JIRA issues, meetings), synthesize 2-5 bullet points describing their current work streams.
+
+        Rules:
+        - Group related items into themes
+        - Lead each bullet with the work stream topic
+        - Write in present tense, active voice
+        - Use wiki-links for JIRA keys: [[jira/KEY|KEY]]
+      user_message: |
+        Synthesize Current Work bullets for Alex Chen based on this data:
+
+        Slack messages:
+        - #team-platform-eng: "control-plane-operator v2.8 deployed to staging" (May 6)
+        - #team-platform-eng: "found nil pointer in admission handler — fix PR incoming" (May 7)
+        - #dev-hypershift: "etcd sharding PR ready for review. Partition key uses namespace hash" (May 5)
+        - #dev-hypershift: "CI flaky again on HCP provisioning tests — timeout in cert-manager" (May 7)
+        - #team-platform-eng: "upgraded cluster-api-provider-aws to v2.9" (May 3)
+
+        JIRA issues:
+        - HCMSTRAT-285: "Implement etcd sharding for hosted control planes" — In Progress (assignee)
+        - OCPBUGS-42156: "CI flakiness in HCP provisioning e2e tests" — In Progress (assignee)
+
+        Email threads:
+        - "etcd sharding design review" — updated migration path section (May 4)
+        - "CI flakiness tracking — HCP e2e tests" — root cause: cert-manager pod restarts (May 6)
+    assert:
+      - type: llm-rubric
+        value: |
+          The output should:
+          1. Have 2-5 bullet points
+          2. Group etcd sharding work into one bullet (PR, design doc, JIRA issue are related)
+          3. Group CI flakiness into another bullet (test failures, cert-manager issue)
+          4. Mention the operator deploy or CAPA upgrade as separate work streams
+          5. Use present tense, active voice ("Working on...", "Investigating...")
+          6. Include JIRA key references
+      - type: contains
+        value: "HCMSTRAT-285"
+      - type: contains
+        value: "etcd"
+
+  # Test 4: Digest curation — categorized bullets
+  - vars:
+      system_prompt: |
+        You are a daily note curator. Given JIRA issues, PRs, and email summaries,
+        synthesize a Digest section with 3-8 categorized bullets. Group by:
+        - **Action Required**: items needing immediate attention
+        - **Active Work Updates**: progress on ongoing work
+        - **New Information**: new emails, docs, or decisions
+
+        Use wiki-links: [[jira/KEY|KEY]] for JIRA, [[prs/repo-number|repo#number]] for PRs.
+        Be concise — 1-2 sentences per bullet. Only include groups that have items.
+      user_message: |
+        Create a Digest from today's data:
+
+        JIRA Issues needing attention:
+        - OCPBUGS-42156: CI flakiness in HCP tests — In Progress, assigned to Alex Chen, updated today
+        - HCMSTRAT-285: etcd sharding implementation — In Progress, assigned to Alex Chen
+
+        PRs:
+        - hypershift#7849: "Add etcd partition key support" — Open, has unanswered review comments
+
+        Recent emails:
+        - "Q3 OKR alignment" from Sam Taylor — needs review by Friday
+    assert:
+      - type: llm-rubric
+        value: |
+          The output should:
+          1. Have categorized sections (Action Required, Active Work, New Information or similar)
+          2. Use bold category headers
+          3. Include wiki-links for JIRA keys and PR references
+          4. Be 3-8 bullets total
+          5. Prioritize the PR with unanswered comments and the email needing review as action items
+      - type: javascript
+        value: |
+          const bullets = (output.match(/^[-*]\s/gm) || []).length;
+          if (bullets < 2) throw new Error(`Only ${bullets} bullets, expected 3-8`);
+          if (bullets > 10) throw new Error(`${bullets} bullets, expected 3-8 max`);
+          return true;

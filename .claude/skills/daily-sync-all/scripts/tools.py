@@ -16,17 +16,20 @@ def _find_vault_root() -> str:
 VAULT_DIR = os.environ.get("VAULT_DIR") or _find_vault_root()
 
 ALLOWED_BASH_PREFIXES = [
-    "obsidian",
-    "/Applications/Obsidian.app/Contents/MacOS/obsidian",
     "pkm-sync",
     "sqlite3",
     "grep",
     f"python3 {VAULT_DIR}/.claude/skills/daily-sync-all/scripts/jira_deadlines.py",
+    "python3 .claude/skills/daily-sync-all/scripts/jira_deadlines.py",
     "date",
     "ls",
     "jira issue view",
     "jira issue list",
 ]
+
+if not os.environ.get("DISABLE_OBSIDIAN_CLI"):
+    ALLOWED_BASH_PREFIXES.insert(0, "obsidian")
+    ALLOWED_BASH_PREFIXES.insert(1, "/Applications/Obsidian.app/Contents/MacOS/obsidian")
 
 
 def bash(command: str, timeout: int = 60) -> str:
@@ -111,6 +114,35 @@ def glob(pattern: str, path: str = None) -> str:
     else:
         matches = sorted(str(p) for p in base.glob(pattern))
     return "\n".join(matches) if matches else "No matches found"
+
+
+def replace_section(file_path: str, section: str, content: str) -> str:
+    """Replace content between %% section:<name> %% and %% /section:<name> %% markers."""
+    try:
+        with open(file_path, "r") as f:
+            text = f.read()
+    except FileNotFoundError:
+        return f"Error: file not found: {file_path}"
+    except Exception as e:
+        return f"Error: {e}"
+
+    open_marker = f"%% section:{section} %%"
+    close_marker = f"%% /section:{section} %%"
+
+    open_idx = text.find(open_marker)
+    close_idx = text.find(close_marker)
+
+    if open_idx == -1:
+        return f"Error: section marker '{open_marker}' not found in {file_path}"
+    if close_idx == -1:
+        return f"Error: closing marker '{close_marker}' not found in {file_path}"
+    if close_idx < open_idx:
+        return f"Error: closing marker appears before opening marker in {file_path}"
+
+    new_text = text[:open_idx] + open_marker + "\n" + content + "\n" + text[close_idx:]
+    with open(file_path, "w") as f:
+        f.write(new_text)
+    return f"Replaced section '{section}' in {file_path}"
 
 
 def grep(pattern: str, path: str = None, include: str = None) -> str:

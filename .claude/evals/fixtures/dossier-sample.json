@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-05-07T09:00:00",
+  "mode": "daily",
+  "days_lookback": 14,
+  "people": [
+    {
+      "name": "Alex Chen",
+      "page_path": "People/Alex Chen.md",
+      "identity": {
+        "email": "achen@example.com",
+        "uid": "achen",
+        "slack_id": "U12345",
+        "slack_display": "Alex Chen"
+      },
+      "fastrover": {
+        "title": "Senior Software Engineer",
+        "manager_uid": "rjones",
+        "manager_name": "Riley Jones",
+        "manager_page_exists": true,
+        "location": "Remote US",
+        "geo": "NA",
+        "timezone": "America/New_York"
+      },
+      "slack_messages": [
+        {"channel": "team-platform-eng", "content": "PSA: control-plane-operator v2.8 deployed to staging, monitoring for regressions", "date": "2026-05-06"},
+        {"channel": "team-platform-eng", "content": "found nil pointer in admission handler when HCP lacks annotations — fix PR incoming", "date": "2026-05-07"},
+        {"channel": "dev-hypershift", "content": "etcd sharding PR is ready for review. Partition key uses the namespace hash approach we discussed", "date": "2026-05-05"},
+        {"channel": "dev-hypershift", "content": "CI flaky again on HCP provisioning tests — timeout in cert-manager rotation", "date": "2026-05-07"},
+        {"channel": "team-platform-eng", "content": "upgraded cluster-api-provider-aws to v2.9 in our fork, rebased against upstream main", "date": "2026-05-03"}
+      ],
+      "slack_channels": ["team-platform-eng", "dev-hypershift", "ocp-hypershift-dev"],
+      "email_threads": [
+        {"subject": "Re: etcd sharding design review", "snippet": "Updated the design doc with the migration path section. Key concern: backward compatibility during mixed-version rollout", "date": "2026-05-04"},
+        {"subject": "CI flakiness tracking — HCP e2e tests", "snippet": "Tracked down the root cause to cert-manager pod restarts during webhook cert rotation. Proposed fix: increase readiness probe timeout", "date": "2026-05-06"}
+      ],
+      "meetings": [
+        {"title": "Platform Team Standup", "path": "Meetings/2026/05-May/06-Tuesday/2026-05-06-Platform-Team-Standup.md", "date": "2026-05-06"},
+        {"title": "Alex Jesse 1:1", "path": "Meetings/2026/05-May/05-Monday/2026-05-05-Alex-Jesse.md", "date": "2026-05-05"},
+        {"title": "etcd sharding design review", "path": "Meetings/2026/05-May/02-Friday/2026-05-02-etcd-sharding-design.md", "date": "2026-05-02"}
+      ],
+      "jira_issues": [
+        {"key": "HCMSTRAT-285", "summary": "Implement etcd sharding for hosted control planes", "status": "In Progress", "role": "assignee"},
+        {"key": "OCPBUGS-42156", "summary": "CI flakiness in HCP provisioning e2e tests", "status": "In Progress", "role": "assignee"}
+      ],
+      "daily_mentions": [
+        {"date": "2026-05-06", "context": "- [[Alex Chen]] — etcd sharding PR up for review; CI fix in progress"}
+      ]
+    }
+  ]
+}

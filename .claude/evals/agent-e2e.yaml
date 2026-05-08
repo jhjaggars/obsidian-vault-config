@@ -1,0 +1,204 @@
+description: "End-to-end agent scenarios — conversation-summarizer with full input"
+
+prompts:
+  - file://prompts/system-user.json
+
+providers:
+  - id: vertex:claude-sonnet-4-6
+    label: claude-sonnet
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
+  - id: vertex:claude-opus-4-6
+    label: claude-opus
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
+  - id: ollama:chat:gemma4:e4b
+    label: gemma4-e4b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+
+  - id: ollama:chat:gemma4:26b
+    label: gemma4-26b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+
+
+defaultTest:
+  options:
+    provider:
+      id: vertex:claude-sonnet-4-6
+      config:
+        projectId: itpc-gcp-hcm-pe-eng-claude
+        region: us-east5
+        anthropic_version: vertex-2023-10-16
+        max_tokens: 1024
+
+tests:
+  # Test 1: Full conversation-summarizer scenario
+  - vars:
+      system_prompt: |
+        You are a conversation summarizer. You read extracted conversation data and produce
+        a ### Conversations section for the daily note.
+
+        For each conversation, generate a single concise line (~15 words max) capturing the topic(s).
+        Use semicolons to separate distinct sub-topics.
+
+        Format:
+        ### Conversations
+
+        > [!info] Auto-updated on YYYY-MM-DD
+
+        - **[[Person Name]]** — topic summary
+        - *#channel-name* — topic summary (with Participant1, Participant2)
+        - **[[Person Name]]** *(email)* — topic summary
+
+        Rules:
+        - DMs first (sorted by message count descending), then threads, then emails
+        - Combine Slack + email for same person if topics overlap
+        - If a People page exists, use [[wiki-links]]; otherwise use plain name
+        - Today's date is 2026-05-07
+
+        The following People pages exist:
+        - People/Alex Chen.md
+        - People/Priya Patel.md
+        - People/Sam Taylor.md
+        (Dana Kim does NOT have a People page)
+      user_message: |
+        Generate the ### Conversations section from this data:
+
+        DM with Alex Chen (12 messages):
+        Topics: etcd sharding PR review and migration path; CI flakiness on HCP provisioning tests; brief mention of team offsite
+
+        DM with Priya Patel (6 messages):
+        Topics: ROSA boundary architecture diagram update; SSO integration pivot to existing IAM provider
+
+        Thread in #team-platform-eng (8 messages, with Alex Chen and Dana Kim):
+        Topics: elevated error rates after control-plane-operator deploy; nil pointer bug in admission handler
+
+        Email from Sam Taylor (1 message):
+        Topics: Q3 OKR alignment — moved multi-cluster observability from stretch to committed; review requested by Friday
+    assert:
+      - type: contains
+        value: "### Conversations"
+      - type: contains
+        value: "> [!info]"
+      - type: contains
+        value: "[[Alex Chen]]"
+      - type: contains
+        value: "[[Priya Patel]]"
+      - type: contains
+        value: "[[Sam Taylor]]"
+      - type: not-contains
+        value: "[[Dana Kim]]"
+      - type: javascript
+        value: |
+          // Dana Kim should NOT be wiki-linked (no People page)
+          if (output.includes('[[Dana Kim]]')) throw new Error('Dana Kim should not be wiki-linked — no People page exists');
+          return true;
+      - type: javascript
+        value: |
+          // Should have 4 conversation entries (2 DMs + 1 thread + 1 email)
+          const bullets = output.split('\n').filter(l => /^-\s+\*/.test(l.trim()));
+          if (bullets.length < 3) throw new Error(`Expected at least 3 conversation bullets, found ${bullets.length}`);
+          return true;
+      - type: llm-rubric
+        value: |
+          Evaluate the Conversations section:
+          1. Alex Chen's summary should mention etcd sharding AND CI flakiness (not the offsite)
+          2. Priya Patel's summary should mention ROSA boundary or architecture diagram
+          3. The thread entry should mention the channel (#team-platform-eng) and the operator bug
+          4. Sam Taylor should be marked as email and mention OKRs
+          5. DMs should appear before the thread, and email should be last
+          6. Each summary line should be concise (~15 words)
+
+  # Test 2: Dossier synthesis — full person profile
+  - vars:
+      system_prompt: |
+        You are a dossier synthesizer. Given structured data about a person, synthesize a
+        ## Dossier section with three subsections:
+
+        ### Role & Organization
+        <Title/role>, <team>. Reports to [[Manager Name]].
+        Active channels: #channel1, #channel2
+
+        ### Current Work
+        - Bullet points describing 2-5 active work streams, grouped by theme
+        - Use wiki-links for JIRA keys: [[jira/KEY\|KEY]] (pipe escaped for table safety)
+        - Present tense, active voice
+
+        ### Recent Activity
+        - **Slack (Nd):** N messages across #channel1, #channel2
+        - **Email (Nd):** N threads — "Subject 1", "Subject 2"
+        - **Meetings (Nd):** [[Meetings/path\|Title (Date)]], ...
+
+        Where Nd = lookback window in days.
+        Include an info callout: > [!info] Auto-generated on 2026-05-07
+      user_message: |
+        Synthesize a dossier for Alex Chen using this data (14-day lookback):
+
+        FastRover:
+        - Title: Senior Software Engineer
+        - Manager: Riley Jones (People page exists)
+        - Location: Remote US
+        - Timezone: America/New_York
+
+        Slack channels: team-platform-eng, dev-hypershift, ocp-hypershift-dev
+
+        Slack messages (5):
+        - #team-platform-eng: "control-plane-operator v2.8 deployed to staging" (May 6)
+        - #team-platform-eng: "found nil pointer in admission handler" (May 7)
+        - #dev-hypershift: "etcd sharding PR ready for review" (May 5)
+        - #dev-hypershift: "CI flaky on HCP provisioning tests" (May 7)
+        - #team-platform-eng: "upgraded CAPA to v2.9" (May 3)
+
+        Email threads (2):
+        - "etcd sharding design review" (May 4)
+        - "CI flakiness tracking — HCP e2e tests" (May 6)
+
+        Meetings (3):
+        - Platform Team Standup (May 6) — Meetings/2026/05-May/06-Tuesday/2026-05-06-Platform-Team-Standup.md
+        - Alex Jesse 1:1 (May 5) — Meetings/2026/05-May/05-Monday/2026-05-05-Alex-Jesse.md
+        - etcd sharding design review (May 2) — Meetings/2026/05-May/02-Friday/2026-05-02-etcd-sharding-design.md
+
+        JIRA (2):
+        - HCMSTRAT-285: "Implement etcd sharding" — In Progress (assignee)
+        - OCPBUGS-42156: "CI flakiness in HCP tests" — In Progress (assignee)
+    assert:
+      - type: contains
+        value: "## Dossier"
+      - type: contains
+        value: "### Role & Organization"
+      - type: contains
+        value: "### Current Work"
+      - type: contains
+        value: "### Recent Activity"
+      - type: contains
+        value: "> [!info]"
+      - type: contains
+        value: "[[Riley Jones]]"
+      - type: contains
+        value: "Senior Software Engineer"
+      - type: icontains
+        value: "etcd"
+      - type: llm-rubric
+        value: |
+          Evaluate the dossier:
+          1. Role section should mention Senior Software Engineer, HyperShift team, and reporting to Riley Jones
+          2. Current Work should have 2-4 bullets grouping: etcd sharding work, CI flakiness investigation, and optionally operator/CAPA work
+          3. Recent Activity should have accurate counts: 5 Slack messages, 2 email threads, 3 meetings
+          4. Meetings should use wiki-links with display aliases
+          5. JIRA keys should appear in Current Work bullets

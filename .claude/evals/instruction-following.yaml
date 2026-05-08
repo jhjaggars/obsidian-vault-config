@@ -1,0 +1,192 @@
+description: "Multi-step instruction following — procedure adherence, skip rules, section placement"
+
+prompts:
+  - file://prompts/system-user.json
+
+providers:
+  - id: vertex:claude-sonnet-4-6
+    label: claude-sonnet
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
+  - id: vertex:claude-opus-4-6
+    label: claude-opus
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
+  - id: ollama:chat:gemma4:e4b
+    label: gemma4-e4b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+
+  - id: ollama:chat:gemma4:26b
+    label: gemma4-26b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+
+
+defaultTest:
+  options:
+    provider:
+      id: vertex:claude-sonnet-4-6
+      config:
+        projectId: itpc-gcp-hcm-pe-eng-claude
+        region: us-east5
+        anthropic_version: vertex-2023-10-16
+        max_tokens: 1024
+
+tests:
+  # Test 1: Skip rules — no Gmail directory
+  - vars:
+      system_prompt: |
+        You are a daily-curator agent. You follow these steps in order:
+        1. Read today's daily note
+        2. Read Work Pipeline.md for active projects
+        3. Scan jira/*.md for issues needing attention
+        4. Scan prs/*.md for PRs needing attention
+        5. Read recent Gmail (from Gmail/ directory)
+        6. Read recent Drive docs
+        7. Check today's meeting notes
+        8. Write Digest and Action Items
+
+        IMPORTANT: If a data source directory doesn't exist, skip that step gracefully and continue.
+        Report which steps were skipped.
+      user_message: |
+        Today's daily note is at daily/2026/05-May/2026-05-07-Wednesday.md.
+        The following directories exist: jira/, prs/, Drive/, Meetings/
+        The Gmail/ directory does NOT exist.
+        The daily note has no meeting notes for today.
+
+        Describe which steps you would execute and which you would skip, and why.
+    assert:
+      - type: llm-rubric
+        value: |
+          The response should:
+          1. Indicate that Step 5 (Gmail) would be SKIPPED because the Gmail/ directory doesn't exist
+          2. Indicate that Step 7 (meeting notes) would be SKIPPED because there are no meeting notes for today
+          3. Indicate that Steps 1-4, 6, and 8 would be EXECUTED
+          4. Not suggest creating the Gmail/ directory or erroring out
+      - type: icontains
+        value: "skip"
+
+  # Test 2: Section placement — Digest between Meeting Prep and Active Projects
+  - vars:
+      system_prompt: |
+        You are a daily-curator agent. When writing sections into the daily note,
+        follow this exact placement order:
+
+        ### Meetings
+        ### Meeting Prep
+        ### Digest          <-- you write this
+        ### Action Items    <-- you write this
+        ### Active Projects
+        ### Upcoming Deadlines
+        ### Todo
+
+        If ### Digest already exists, replace it. If not, insert between ### Meeting Prep and ### Active Projects.
+        Never touch ### Meetings, ### Meeting Prep, ### Active Projects, or ### Todo.
+      user_message: |
+        The daily note currently has these sections in this order:
+        ### Meetings (with a table)
+        ### Meeting Prep (with content)
+        ### Active Projects (with content)
+        ### Todo (with items)
+
+        There is NO ### Digest or ### Action Items section yet.
+
+        Where exactly would you insert ### Digest and ### Action Items?
+        Describe the placement precisely.
+    assert:
+      - type: llm-rubric
+        value: |
+          The response should clearly state that:
+          1. ### Digest and ### Action Items go BETWEEN ### Meeting Prep and ### Active Projects
+          2. They should NOT go before ### Meeting Prep or after ### Active Projects
+          3. The order is: Digest first, then Action Items
+          4. The existing ### Active Projects and ### Todo content should not be modified
+
+  # Test 3: Preserve checked items in Action Items
+  - vars:
+      system_prompt: |
+        You are a daily-curator agent. When writing the ### Action Items section:
+        - Write new unchecked items (- [ ]) based on today's data
+        - ALWAYS preserve any existing checked items (- [x]) from the old Action Items
+        - Append preserved checked items at the bottom after the new unchecked items
+      user_message: |
+        The existing ### Action Items section contains:
+
+        ### Action Items
+
+        - [ ] Review etcd sharding PR — [[prs/hypershift-7849|hypershift#7849]]
+        - [x] Updated architecture diagram for ROSA boundary — done May 6
+        - [x] Responded to Sam's OKR email — done May 5
+
+        Write a new ### Action Items section with these new items:
+        - Check CI fix for HCP provisioning tests
+        - Review Q3 OKR doc from Sam
+
+        Make sure to preserve the checked items.
+    assert:
+      - type: contains
+        value: "- [x]"
+      - type: javascript
+        value: |
+          const checkedCount = (output.match(/- \[x\]/g) || []).length;
+          if (checkedCount < 2) throw new Error(`Expected at least 2 preserved checked items, found ${checkedCount}`);
+          return true;
+      - type: javascript
+        value: |
+          const uncheckedCount = (output.match(/- \[ \]/g) || []).length;
+          if (uncheckedCount < 2) throw new Error(`Expected at least 2 new unchecked items, found ${uncheckedCount}`);
+          return true;
+      - type: llm-rubric
+        value: |
+          The checked items (- [x]) should appear AFTER the unchecked items (- [ ]),
+          not mixed in randomly. The two existing checked items about "architecture diagram"
+          and "OKR email" must be preserved exactly.
+
+  # Test 4: @claude directive lifecycle
+  - vars:
+      system_prompt: |
+        You are a project-tracker agent. When you encounter an @claude directive in a project note:
+        1. Execute the instruction in the context of the section it appears in
+        2. After execution, mark it done: @claude (done YYYY-MM-DD), <original instruction>
+        3. Skip directives already marked as (done ...) or (skipped ...)
+        4. Today's date is 2026-05-07
+      user_message: |
+        This project note section contains a directive:
+
+        ## Team
+        [[Alex Chen]], [[Priya Patel]], [[Sam Taylor]]
+        @claude, make this a table with Name and Role columns
+
+        The following People pages exist with these roles:
+        - Alex Chen: Senior Software Engineer
+        - Priya Patel: Product Manager
+        - Sam Taylor: Staff Engineer
+
+        Show me what this section should look like after processing the directive.
+    assert:
+      - type: contains
+        value: "@claude (done 2026-05-07)"
+      - type: javascript
+        value: |
+          const lines = output.split('\n').filter(l => l.trim().startsWith('|'));
+          if (lines.length < 4) throw new Error(`Expected a table with header + sep + 3 data rows, got ${lines.length} table lines`);
+          return true;
+      - type: icontains
+        value: "Alex Chen"
+      - type: icontains
+        value: "Priya Patel"

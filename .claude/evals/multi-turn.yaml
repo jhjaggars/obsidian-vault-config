@@ -1,0 +1,156 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: "Multi-turn agent eval — runs actual tool-calling loops against mock fixtures"
+
+prompts:
+  - "{{user_message}}"
+
+providers:
+  - id: file://agent_provider.py
+    label: gemma4-e4b-agent
+    config:
+      model: gemma4:e4b
+      think: false
+      max_turns: 20
+      num_ctx: 32768
+      num_predict: 16384
+
+  - id: file://agent_provider.py
+    label: gemma4-26b-agent
+    config:
+      model: gemma4:26b
+      think: false
+      max_turns: 20
+      num_ctx: 32768
+      num_predict: 16384
+
+defaultTest:
+  options:
+    provider:
+      id: vertex:claude-sonnet-4-6
+      config:
+        projectId: itpc-gcp-hcm-pe-eng-claude
+        region: us-east5
+        anthropic_version: vertex-2023-10-16
+        max_tokens: 1024
+
+tests:
+  # Test 1: Conversation summarizer — read JSON file, write ### Conversations section
+  - vars:
+      agent: conversation-summarizer
+      user_message: >
+        Summarize conversations from .claude/evals/fixtures/conversations-sample.json
+        into today's daily note.
+    assert:
+      # Structural checks on file content
+      - type: contains
+        value: "### Conversations"
+      - type: contains
+        value: "> [!info]"
+      - type: icontains
+        value: "Alex Chen"
+      - type: icontains
+        value: "Priya Patel"
+      - type: icontains
+        value: "Sam Taylor"
+      # Quality check via Claude grader
+      - type: llm-rubric
+        value: |
+          This is the combined output of a multi-turn conversation-summarizer agent.
+          It includes the agent's final chat message AND the content of files it wrote/edited.
+          Look for the file content (after "--- FILE:" markers) to evaluate the actual work.
+
+          Evaluate the ### Conversations section the agent wrote:
+          1. Has a ### Conversations heading with an info callout (> [!info])
+          2. Each conversation has a concise summary line (~15 words)
+          3. DMs are listed before threads, threads before emails
+          4. People names use wiki-links ([[Name]])
+          5. The thread mentions the channel (#team-platform-eng)
+          6. Social chat (team offsite) is excluded or minimized
+
+  # Test 2: Conversation summarizer with inline data (no file read needed)
+  - vars:
+      agent: conversation-summarizer
+      user_message: |
+        Summarize conversations from the following data into today's daily note.
+
+        The daily note is at daily/2026/05-May/2026-05-07-Thursday.md
+
+        Conversation data:
+        {
+          "date": "2026-05-07",
+          "conversations": [
+            {
+              "type": "dm",
+              "person": "Alex Chen",
+              "message_count": 12,
+              "messages": [
+                {"author": "Alex Chen", "content": "hey, did you see the PR for the etcd sharding change?", "time": "09:15"},
+                {"author": "Jesse Jaggars", "content": "yeah, looking at it now. partition key logic seems right", "time": "09:16"},
+                {"author": "Alex Chen", "content": "CI is flaky on the e2e tests again. same timeout issue", "time": "09:25"},
+                {"author": "Jesse Jaggars", "content": "I'll check the prow logs", "time": "09:31"}
+              ]
+            },
+            {
+              "type": "dm",
+              "person": "Priya Patel",
+              "message_count": 6,
+              "messages": [
+                {"author": "Priya Patel", "content": "quick question about the ROSA boundary project", "time": "10:00"},
+                {"author": "Jesse Jaggars", "content": "we pivoted to using the existing IAM provider", "time": "10:12"}
+              ]
+            },
+            {
+              "type": "email",
+              "person": "Sam Taylor",
+              "message_count": 1,
+              "messages": [
+                {"subject": "Re: Q3 OKR alignment", "body_snippet": "Moved multi-cluster observability from stretch to committed. Review by Friday.", "from_me": false}
+              ]
+            }
+          ]
+        }
+    assert:
+      - type: contains
+        value: "### Conversations"
+      - type: icontains
+        value: "etcd"
+      - type: icontains
+        value: "ROSA"
+      - type: javascript
+        value: |
+          const meta = context.metadata || {};
+          if (meta.turns < 2) throw new Error('Agent only ran ' + meta.turns + ' turns');
+          return true;
+      - type: llm-rubric
+        value: |
+          This is the combined output of a conversation-summarizer agent (chat message + file content).
+          The agent was given inline conversation data and asked to write a ### Conversations section.
+
+          Evaluate the written content:
+          1. Does it contain a ### Conversations section with proper formatting?
+          2. Does it capture the key topics: etcd sharding, ROSA boundary, Q3 OKR?
+          3. Are the summaries concise (one line each)?
+          4. Is the email entry distinguished from DMs (marked as email)?
+
+  # Test 3: Daily curator — read data sources, write Digest + Action Items
+  - vars:
+      agent: daily-curator
+      user_message: >
+        Curate today's daily note: write the Digest and Action Items sections.
+    assert:
+      - type: javascript
+        value: |
+          const meta = context.metadata || {};
+          if (meta.turns < 3) throw new Error('Agent only ran ' + meta.turns + ' turns — expected multi-turn tool use');
+          return true;
+      - type: llm-rubric
+        value: |
+          This is the combined output of a daily-curator agent (chat message + file content).
+          The agent scans JIRA, PRs, Gmail, Drive, and meetings to write Digest and Action Items.
+          It operated against limited mock fixtures, so data may be sparse.
+
+          Evaluate:
+          1. Did the agent attempt to read multiple data sources (check the agent message for tool activity)?
+          2. If it wrote a Digest section, is it categorized with bold headers?
+          3. If it wrote Action Items, are they checkboxes (- [ ])?
+          4. Did the agent handle missing data gracefully (no crashes, no hallucinated data)?

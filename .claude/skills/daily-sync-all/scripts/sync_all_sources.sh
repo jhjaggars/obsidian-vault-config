@@ -137,9 +137,13 @@ else
     fi
 fi
 
+# --- Agent steps: set trigger for metrics ---
+export AGENT_TRIGGER="scheduled"
+
 # Step 6: Run project-tracker agent (Meeting Prep + Active Projects + Deadlines)
 step "Step 6/7: project-tracker agent"
 AGENT_RUNNER="$SKILL_DIR/scripts/run_agent.py"
+export AGENT_PIPELINE_STEP="step_6_project_tracker"
 if [ -f "$AGENT_RUNNER" ]; then
     (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
         project-tracker \
@@ -152,6 +156,7 @@ fi
 
 # Step 7: Run daily-curator agent (Digest + Action Items)
 step "Step 7/8: daily-curator agent"
+export AGENT_PIPELINE_STEP="step_7_daily_curator"
 if [ -f "$AGENT_RUNNER" ]; then
     (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
         daily-curator \
@@ -164,6 +169,7 @@ fi
 
 # Step 7.5: Build people dossiers (today's meeting attendees + DM partners)
 step "Step 7.5/8: People dossier updates"
+export AGENT_PIPELINE_STEP="step_7.5_dossier_synthesizer"
 DOSSIER_EXTRACT="$VAULT_DIR/.claude/skills/people-dossier/scripts/build_dossier.py"
 if [ -f "$DOSSIER_EXTRACT" ]; then
     DOSSIER_JSON=$("$UV" run "$DOSSIER_EXTRACT" "$VAULT_DIR" --mode daily 2>&1 | tail -1) \
@@ -183,6 +189,7 @@ fi
 
 # Step 8: Extract and summarize today's conversations (Slack DMs + email)
 step "Step 8/8: Conversation sync"
+export AGENT_PIPELINE_STEP="step_8_conversation_summarizer"
 CONV_EXTRACT="$SKILL_DIR/scripts/extract_conversations.py"
 if [ -f "$CONV_EXTRACT" ]; then
     CONV_JSON=$("$UV" run "$CONV_EXTRACT" "$VAULT_DIR" 2>&1 | tail -1) \

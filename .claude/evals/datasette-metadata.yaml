@@ -1,0 +1,66 @@
+title: PKM Agent Metrics
+description: Token usage, latency, and tool-call telemetry for Obsidian vault automation agents.
+databases:
+  agent_metrics:
+    tables:
+      agent_runs:
+        description: One row per agent invocation
+        label_column: agent_name
+        sort_desc: run_date
+      turn_details:
+        description: Per-turn breakdown within each agent run
+        sort: turn_number
+    queries:
+      token_usage_by_model_30d:
+        title: "Token usage by model (last 30 days)"
+        sql: |
+          SELECT provider, model, COUNT(*) AS runs,
+            SUM(prompt_tokens) AS total_prompt,
+            SUM(completion_tokens) AS total_completion,
+            SUM(thinking_tokens) AS total_thinking,
+            ROUND(AVG(prompt_tokens + completion_tokens), 0) AS avg_tokens_per_run,
+            ROUND(AVG(wall_time_s), 1) AS avg_wall_s
+          FROM agent_runs
+          WHERE run_date >= date('now', '-30 days')
+          GROUP BY provider, model ORDER BY total_prompt + total_completion DESC
+      tok_per_second_comparison:
+        title: "Tok/s comparison across providers"
+        sql: |
+          SELECT provider, model, COUNT(*) AS runs,
+            ROUND(SUM(completion_tokens) * 1.0 / SUM(wall_time_s), 1) AS output_tok_per_s,
+            ROUND(AVG(wall_time_s), 1) AS avg_wall_s
+          FROM agent_runs
+          WHERE run_date >= date('now', '-30 days') AND wall_time_s > 0
+          GROUP BY provider, model ORDER BY output_tok_per_s DESC
+      context_growth_per_turn:
+        title: "Context growth per turn"
+        sql: |
+          SELECT r.agent_name, r.model, t.turn_number, t.prompt_tokens,
+            t.completion_tokens, t.tool_calls, t.tools_invoked
+          FROM turn_details t JOIN agent_runs r ON r.run_id = t.run_id
+          WHERE r.run_date >= date('now', '-7 days')
+          ORDER BY r.run_id, t.turn_number
+      daily_cost_estimate:
+        title: "Daily cost estimate (Vertex Sonnet pricing)"
+        sql: |
+          SELECT run_date, COUNT(*) AS runs,
+            SUM(prompt_tokens) AS prompt_tok, SUM(completion_tokens) AS completion_tok,
+            ROUND(SUM(prompt_tokens) * 3.0 / 1e6 + SUM(completion_tokens) * 15.0 / 1e6, 4) AS est_cost_usd,
+            SUM(cache_read_tokens) AS cache_read_tok
+          FROM agent_runs WHERE provider IN ('anthropic', 'vertex')
+          GROUP BY run_date ORDER BY run_date DESC LIMIT 30
+      error_and_max_turn_runs:
+        title: "Error/max-turns runs"
+        sql: |
+          SELECT run_date, agent_name, model, total_turns, stop_reason, error_message, wall_time_s
+          FROM agent_runs
+          WHERE completed = 0 OR stop_reason = 'max_turns' OR error_message IS NOT NULL
+          ORDER BY run_date DESC LIMIT 100
+      tool_usage_by_agent:
+        title: "Tool usage breakdown by agent"
+        sql: |
+          SELECT agent_name, model, COUNT(*) AS runs,
+            SUM(total_tool_calls) AS total_tools,
+            ROUND(AVG(total_tool_calls), 1) AS avg_tools_per_run, tools_used
+          FROM agent_runs WHERE run_date >= date('now', '-30 days')
+          GROUP BY agent_name, model ORDER BY total_tools DESC

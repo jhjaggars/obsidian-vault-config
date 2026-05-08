@@ -1,0 +1,281 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: "Tool calling reliability — GATE EVAL (must pass >90% to proceed)"
+
+prompts:
+  - file://prompts/tool-system-user.json
+
+providers:
+  - id: ollama:chat:gemma4:e4b
+    label: gemma4-e4b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+      tools:
+        - type: function
+          function:
+            name: Read
+            description: "Read a file"
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                offset: {type: integer}
+                limit: {type: integer}
+              required: [file_path]
+        - type: function
+          function:
+            name: Glob
+            description: "Find files by pattern"
+            parameters:
+              type: object
+              properties:
+                pattern: {type: string}
+                path: {type: string}
+              required: [pattern]
+        - type: function
+          function:
+            name: Grep
+            description: "Search file contents"
+            parameters:
+              type: object
+              properties:
+                pattern: {type: string}
+                path: {type: string}
+                include: {type: string}
+              required: [pattern]
+        - type: function
+          function:
+            name: Bash
+            description: "Run a shell command"
+            parameters:
+              type: object
+              properties:
+                command: {type: string}
+                description: {type: string}
+              required: [command]
+        - type: function
+          function:
+            name: Edit
+            description: "Edit a file"
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                old_string: {type: string}
+                new_string: {type: string}
+                replace_all: {type: boolean}
+              required: [file_path, old_string, new_string]
+        - type: function
+          function:
+            name: Write
+            description: "Write a file"
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                content: {type: string}
+              required: [file_path, content]
+
+  - id: ollama:chat:gemma4:26b
+    label: gemma4-26b
+    config:
+      temperature: 0
+      num_predict: 16384
+      num_ctx: 32768
+      tools:
+        - type: function
+          function:
+            name: Read
+            description: "Read a file"
+            parameters: &read_params
+              type: object
+              properties:
+                file_path: {type: string}
+                offset: {type: integer}
+                limit: {type: integer}
+              required: [file_path]
+        - type: function
+          function:
+            name: Glob
+            description: "Find files by pattern"
+            parameters: &glob_params
+              type: object
+              properties:
+                pattern: {type: string}
+                path: {type: string}
+              required: [pattern]
+        - type: function
+          function:
+            name: Grep
+            description: "Search file contents"
+            parameters: &grep_params
+              type: object
+              properties:
+                pattern: {type: string}
+                path: {type: string}
+                include: {type: string}
+              required: [pattern]
+        - type: function
+          function:
+            name: Bash
+            description: "Run a shell command"
+            parameters: &bash_params
+              type: object
+              properties:
+                command: {type: string}
+                description: {type: string}
+              required: [command]
+        - type: function
+          function:
+            name: Edit
+            description: "Edit a file"
+            parameters: &edit_params
+              type: object
+              properties:
+                file_path: {type: string}
+                old_string: {type: string}
+                new_string: {type: string}
+                replace_all: {type: boolean}
+              required: [file_path, old_string, new_string]
+        - type: function
+          function:
+            name: Write
+            description: "Write a file"
+            parameters: &write_params
+              type: object
+              properties:
+                file_path: {type: string}
+                content: {type: string}
+              required: [file_path, content]
+
+tests:
+  # Test 1: Single Read tool call
+  - vars:
+      user_message: "Read the file at Work Pipeline.md"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const readCall = calls.find(c => c.function?.name === 'Read');
+          if (!readCall) throw new Error('No Read tool call found');
+          const args = typeof readCall.function.arguments === 'string' ? JSON.parse(readCall.function.arguments) : readCall.function.arguments;
+          if (!args.file_path) throw new Error('Missing file_path parameter');
+          if (!args.file_path.includes('Work Pipeline')) throw new Error('file_path does not reference Work Pipeline');
+          return true;
+
+  # Test 2: Single Glob tool call
+  - vars:
+      user_message: "Find all markdown files in the Projects/Work/ directory"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const globCall = calls.find(c => c.function?.name === 'Glob');
+          if (!globCall) throw new Error('No Glob tool call found');
+          const args = typeof globCall.function.arguments === 'string' ? JSON.parse(globCall.function.arguments) : globCall.function.arguments;
+          if (!args.pattern) throw new Error('Missing pattern parameter');
+          if (!args.pattern.includes('.md') && !args.pattern.includes('*')) throw new Error('pattern does not look like a glob');
+          return true;
+
+  # Test 3: Single Bash tool call
+  - vars:
+      user_message: "What is today's date?"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const bashCall = calls.find(c => c.function?.name === 'Bash');
+          if (!bashCall) throw new Error('No Bash tool call found');
+          const args = typeof bashCall.function.arguments === 'string' ? JSON.parse(bashCall.function.arguments) : bashCall.function.arguments;
+          if (!args.command) throw new Error('Missing command parameter');
+          if (!args.command.includes('date')) throw new Error('command does not use date');
+          return true;
+
+  # Test 4: Grep tool call with path scoping
+  - vars:
+      user_message: "Search for the text 'assignee' in all files under jira/"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const grepCall = calls.find(c => c.function?.name === 'Grep');
+          if (!grepCall) throw new Error('No Grep tool call found');
+          const args = typeof grepCall.function.arguments === 'string' ? JSON.parse(grepCall.function.arguments) : grepCall.function.arguments;
+          if (!args.pattern) throw new Error('Missing pattern parameter');
+          if (!args.pattern.includes('assignee')) throw new Error('pattern does not include "assignee"');
+          return true;
+
+  # Test 5: Edit tool call with old_string and new_string
+  - vars:
+      user_message: |
+        The file daily-note.md contains this text:
+
+        ### Digest
+
+        > [!info] Auto-curated on 2026-05-06
+
+        **Action Required**
+        - Old item that needs replacing
+
+        Replace the Digest section with:
+
+        ### Digest
+
+        > [!info] Auto-curated on 2026-05-07
+
+        **Active Work Updates**
+        - New updated item
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const editCall = calls.find(c => c.function?.name === 'Edit');
+          if (!editCall) throw new Error('No Edit tool call found');
+          const args = typeof editCall.function.arguments === 'string' ? JSON.parse(editCall.function.arguments) : editCall.function.arguments;
+          if (!args.file_path) throw new Error('Missing file_path');
+          if (!args.old_string) throw new Error('Missing old_string');
+          if (!args.new_string) throw new Error('Missing new_string');
+          if (!args.old_string.includes('2026-05-06')) throw new Error('old_string missing old date');
+          if (!args.new_string.includes('2026-05-07')) throw new Error('new_string missing new date');
+          return true;
+
+  # Test 6: Schema adherence — no invented parameters
+  - vars:
+      user_message: "Read the contents of People/Alex Chen.md starting from line 10"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const readCall = calls.find(c => c.function?.name === 'Read');
+          if (!readCall) throw new Error('No Read tool call found');
+          const args = typeof readCall.function.arguments === 'string' ? JSON.parse(readCall.function.arguments) : readCall.function.arguments;
+          const validParams = new Set(['file_path', 'offset', 'limit']);
+          const extraParams = Object.keys(args).filter(k => !validParams.has(k));
+          if (extraParams.length > 0) throw new Error('Invented parameters: ' + extraParams.join(', '));
+          if (!args.file_path) throw new Error('Missing file_path');
+          return true;
+
+  # Test 7: No hallucinated tools
+  - vars:
+      user_message: "Search the internet for the latest Kubernetes release notes"
+    assert:
+      - type: javascript
+        value: |
+          try {
+            const calls = Array.isArray(output) ? output : (typeof output === 'string' ? JSON.parse(output) : []);
+            if (Array.isArray(calls) && calls.length > 0) {
+              const validNames = ['Read','Glob','Grep','Bash','Edit','Write'];
+              const invalidTools = calls.filter(c => c.function?.name && !validNames.includes(c.function.name));
+              if (invalidTools.length > 0) throw new Error('Called non-existent tools: ' + invalidTools.map(c=>c.function.name).join(', '));
+            }
+          } catch(e) {
+            if (e.message.includes('Called non-existent')) throw e;
+          }
+          return true;

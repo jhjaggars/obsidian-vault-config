@@ -1,0 +1,61 @@
+# Shared provider definitions for Gemma 4 eval suite
+# Vertex AI providers use ADC (gcloud auth application-default login)
+# Ollama providers use local models
+
+# --- Vertex AI (Claude baseline) ---
+
+vertex-sonnet: &vertex-sonnet
+  id: vertex:claude-sonnet-4-6
+  label: claude-sonnet
+  config:
+    projectId: itpc-gcp-hcm-pe-eng-claude
+    region: us-east5
+    anthropic_version: vertex-2023-10-16
+    max_tokens: 8096
+    temperature: 0
+
+vertex-opus: &vertex-opus
+  id: vertex:claude-opus-4-6
+  label: claude-opus
+  config:
+    projectId: itpc-gcp-hcm-pe-eng-claude
+    region: us-east5
+    anthropic_version: vertex-2023-10-16
+    max_tokens: 8096
+    temperature: 0
+
+# --- Ollama (Gemma 4 candidates) ---
+
+gemma4-e4b: &gemma4-e4b
+  id: ollama:chat:gemma4:e4b
+  label: gemma4-e4b
+  config:
+    temperature: 0
+    num_predict: 8096
+    num_ctx: 32768
+
+gemma4-26b: &gemma4-26b
+  id: ollama:chat:gemma4:26b
+  label: gemma4-26b
+  config:
+    temperature: 0
+    num_predict: 8096
+    num_ctx: 32768
+
+gemma4-31b: &gemma4-31b
+  id: ollama:chat:gemma4:31b
+  label: gemma4-31b
+  config:
+    temperature: 0
+    num_predict: 8096
+    num_ctx: 32768
+
+# --- Grader (for llm-rubric assertions) ---
+
+grader: &grader
+  id: vertex:claude-sonnet-4-6
+  config:
+    projectId: itpc-gcp-hcm-pe-eng-claude
+    region: us-east5
+    anthropic_version: vertex-2023-10-16
+    max_tokens: 1024
