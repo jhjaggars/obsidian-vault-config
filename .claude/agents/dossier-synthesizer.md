@@ -170,6 +170,8 @@ For meeting wiki-links, use the format:
 
 > [!info] Auto-generated on YYYY-MM-DD
 
+CORRECT callout format: `> [!info]` (single bracket). INCORRECT: `> [[!info]` (wiki-link syntax, never use).
+
 ### Role & Organization
 <synthesized content>
 

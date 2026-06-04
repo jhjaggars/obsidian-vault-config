@@ -47,7 +47,7 @@ def bash(command: str, timeout: int = 60) -> str:
         return f"Error: {e}"
 
 
-DEFAULT_READ_LIMIT = 100  # lines; agent must explicitly request more
+DEFAULT_READ_LIMIT = 400  # lines; large enough for a full daily note in one read
 
 
 def read(file_path: str, offset: int = None, limit: int = None) -> str:
@@ -109,6 +109,17 @@ def edit(file_path: str, old_string: str, new_string: str, replace_all: bool = F
 
 def glob(pattern: str, path: str = None) -> str:
     base = Path(path or VAULT_DIR)
+    # If the model passes an absolute path as the pattern, convert it to
+    # a relative pattern under the vault root so Path.glob() doesn't raise.
+    if os.path.isabs(pattern):
+        try:
+            pattern = str(Path(pattern).relative_to(base))
+        except ValueError:
+            # Pattern is outside the vault — try using it as a literal path
+            p = Path(pattern)
+            if p.exists():
+                return str(p)
+            return f"No matches found (absolute path outside vault: {pattern})"
     if pattern.startswith("**"):
         matches = sorted(str(p) for p in base.rglob(pattern.removeprefix("**/")))
     else:
@@ -138,6 +149,9 @@ def replace_section(file_path: str, section: str, content: str) -> str:
         return f"Error: closing marker '{close_marker}' not found in {file_path}"
     if close_idx < open_idx:
         return f"Error: closing marker appears before opening marker in {file_path}"
+
+    # Fix common LLM callout syntax error: > [[!type] → > [!type]
+    content = re.sub(r'> \[\[!(\w+)\]', r'> [!\1]', content)
 
     new_text = text[:open_idx] + open_marker + "\n" + content + "\n" + text[close_idx:]
     with open(file_path, "w") as f:

@@ -123,6 +123,8 @@ For threads: don't wiki-link participants listed in the parenthetical — just u
 
 > [!info] Auto-updated on YYYY-MM-DD HH:MM
 
+CORRECT callout format: `> [!info]` (single bracket). INCORRECT: `> [[!info]` (wiki-link syntax, never use).
+
 - **[[James Laska]]** — OME authentication approach; second-system effect concerns vs KCP
 - **[[Adam Miller]]** — Home networking (UniFi vs OpenWrt); Claude Code adoption in HCM
 - **[[Christopher Alfonso]]** — JIRA CLI automation; agentic SDLC outcome tracking

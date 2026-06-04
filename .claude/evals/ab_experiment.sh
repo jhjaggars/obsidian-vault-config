@@ -186,11 +186,23 @@ run_agent_step() {
 
     case "$step_num" in
         6)
-            log "[$log_prefix] Step 6: project-tracker ($provider)"
+            log "[$log_prefix] Step 6a: project-updater ($provider)"
             (cd "$vault" && "$UV" run "$agent_runner" \
-                project-tracker \
-                "Run the project tracker agent for today's daily note." \
-                2>&1) | tee "$LOG_DIR/${log_prefix}-step6.log"
+                project-updater \
+                "Discover active projects and update their Related Items sections." \
+                2>&1) | tee "$LOG_DIR/${log_prefix}-step6a.log"
+
+            log "[$log_prefix] Step 6b: meeting-prepper ($provider)"
+            (cd "$vault" && "$UV" run "$agent_runner" \
+                meeting-prepper \
+                "Prepare meeting context for today's meetings and write the Meeting Prep section." \
+                2>&1) | tee "$LOG_DIR/${log_prefix}-step6b.log"
+
+            log "[$log_prefix] Step 6c: daily-summarizer ($provider)"
+            (cd "$vault" && "$UV" run "$agent_runner" \
+                daily-summarizer \
+                "Build the Active Projects and Upcoming Deadlines sections for today's daily note." \
+                2>&1) | tee "$LOG_DIR/${log_prefix}-step6c.log"
             ;;
         7)
             log "[$log_prefix] Step 7: daily-curator ($provider)"

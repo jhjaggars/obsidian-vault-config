@@ -122,6 +122,8 @@ Format:
 
 > [!info] Auto-curated on YYYY-MM-DD
 
+CORRECT callout format: `> [!info]` (single bracket). INCORRECT: `> [[!info]` (wiki-link syntax, never use).
+
 **Action Required**
 - [[jira/KEY|KEY]] Brief description of what needs to happen and why it's urgent
 

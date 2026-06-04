@@ -1,0 +1,364 @@
+description: "Quick eval: gemma4:12b-mlx for vault periodic jobs (clean memory)"
+
+prompts:
+  - file://prompts/system-user.json
+
+providers:
+  - id: ollama:chat:gemma4:12b-mlx
+    label: gemma4-12b-mlx
+    config:
+      temperature: 0
+      num_predict: 8096
+      num_ctx: 32768
+      think: false
+
+defaultTest:
+  options:
+    provider:
+      id: vertex:claude-sonnet-4-6
+      config:
+        projectId: itpc-gcp-hcm-pe-eng-claude
+        region: us-east5
+        anthropic_version: vertex-2023-10-16
+        max_tokens: 1024
+tests:
+  # ============================================================
+  # INSTRUCTION FOLLOWING (from instruction-following.yaml)
+  # ============================================================
+
+  # IF-1: Skip rules — gracefully skip missing directories
+  - vars:
+      system_prompt: |
+        You are a daily-curator agent. You follow these steps in order:
+        1. Read today's daily note
+        2. Read Work Pipeline.md for active projects
+        3. Scan jira/*.md for issues needing attention
+        4. Scan prs/*.md for PRs needing attention
+        5. Read recent Gmail (from Gmail/ directory)
+        6. Read recent Drive docs
+        7. Check today's meeting notes
+        8. Write Digest and Action Items
+
+        IMPORTANT: If a data source directory doesn't exist, skip that step gracefully and continue.
+        Report which steps were skipped.
+      user_message: |
+        Today's daily note is at daily/2026/05-May/2026-05-07-Wednesday.md.
+        The following directories exist: jira/, prs/, Drive/, Meetings/
+        The Gmail/ directory does NOT exist.
+        The daily note has no meeting notes for today.
+
+        Describe which steps you would execute and which you would skip, and why.
+    assert:
+      - type: llm-rubric
+        value: |
+          The response should:
+          1. Indicate that Step 5 (Gmail) would be SKIPPED because the Gmail/ directory doesn't exist
+          2. Indicate that Step 7 (meeting notes) would be SKIPPED because there are no meeting notes for today
+          3. Indicate that Steps 1-4, 6, and 8 would be EXECUTED
+          4. Not suggest creating the Gmail/ directory or erroring out
+      - type: icontains
+        value: "skip"
+
+  # IF-2: Preserve checked items in Action Items
+  - vars:
+      system_prompt: |
+        You are a daily-curator agent. When writing the ### Action Items section:
+        - Write new unchecked items (- [ ]) based on today's data
+        - ALWAYS preserve any existing checked items (- [x]) from the old Action Items
+        - Append preserved checked items at the bottom after the new unchecked items
+      user_message: |
+        The existing ### Action Items section contains:
+
+        ### Action Items
+
+        - [ ] Review etcd sharding PR — [[prs/hypershift-7849|hypershift#7849]]
+        - [x] Updated architecture diagram for ROSA boundary — done May 6
+        - [x] Responded to Sam's OKR email — done May 5
+
+        Write a new ### Action Items section with these new items:
+        - Check CI fix for HCP provisioning tests
+        - Review Q3 OKR doc from Sam
+
+        Make sure to preserve the checked items.
+    assert:
+      - type: contains
+        value: "- [x]"
+      - type: javascript
+        value: |
+          const checkedCount = (output.match(/- \[x\]/g) || []).length;
+          if (checkedCount < 2) throw new Error(`Expected at least 2 preserved checked items, found ${checkedCount}`);
+          return true;
+      - type: javascript
+        value: |
+          const uncheckedCount = (output.match(/- \[ \]/g) || []).length;
+          if (uncheckedCount < 2) throw new Error(`Expected at least 2 new unchecked items, found ${uncheckedCount}`);
+          return true;
+      - type: llm-rubric
+        value: |
+          The checked items (- [x]) should appear AFTER the unchecked items (- [ ]),
+          not mixed in randomly. The two existing checked items about "architecture diagram"
+          and "OKR email" must be preserved exactly.
+
+  # IF-3: @claude directive lifecycle
+  - vars:
+      system_prompt: |
+        You are a project-tracker agent. When you encounter an @claude directive in a project note:
+        1. Execute the instruction in the context of the section it appears in
+        2. After execution, mark it done: @claude (done YYYY-MM-DD), <original instruction>
+        3. Skip directives already marked as (done ...) or (skipped ...)
+        4. Today's date is 2026-05-07
+      user_message: |
+        This project note section contains a directive:
+
+        ## Team
+        [[Alex Chen]], [[Priya Patel]], [[Sam Taylor]]
+        @claude, make this a table with Name and Role columns
+
+        The following People pages exist with these roles:
+        - Alex Chen: Senior Software Engineer
+        - Priya Patel: Product Manager
+        - Sam Taylor: Staff Engineer
+
+        Show me what this section should look like after processing the directive.
+    assert:
+      - type: contains
+        value: "@claude (done 2026-05-07)"
+      - type: javascript
+        value: |
+          const lines = output.split('\n').filter(l => l.trim().startsWith('|'));
+          if (lines.length < 4) throw new Error(`Expected a table with header + sep + 3 data rows, got ${lines.length} table lines`);
+          return true;
+      - type: icontains
+        value: "Alex Chen"
+
+  # ============================================================
+  # SUMMARIZATION (from summarization.yaml)
+  # ============================================================
+
+  # SUM-1: Slack DM summary — concise topic line
+  - vars:
+      system_prompt: |
+        You are a conversation summarizer. Given a list of Slack DM messages between two people,
+        produce a single concise line (~15 words max) capturing the topic(s) discussed.
+        Use semicolons to separate distinct sub-topics within one conversation.
+        Focus on work topics, not pleasantries. Be topic-focused, not message-count-focused.
+      user_message: |
+        Summarize this DM conversation with Alex Chen:
+
+        Alex Chen: hey, did you see the PR for the etcd sharding change?
+        Jesse Jaggars: yeah, looking at it now. the partition key logic seems right but I'm not sure about the migration path
+        Alex Chen: agreed. we should probably add a feature gate for the rollout
+        Jesse Jaggars: makes sense. let me check what the operator upgrade path looks like
+        Alex Chen: also wanted to mention — the CI is flaky on the e2e tests again. same timeout issue from last week
+        Jesse Jaggars: ugh. which test suite?
+        Alex Chen: the hosted control plane provisioning tests. timeout waiting for the hosted cluster to become available
+        Jesse Jaggars: I'll take a look. might be the webhook cert rotation issue
+        Alex Chen: could be. the cert-manager pod was restarting in the last failure
+        Jesse Jaggars: let me check the prow logs
+        Alex Chen: thanks. oh btw, are you going to the team offsite next month?
+        Jesse Jaggars: yeah planning on it
+    assert:
+      - type: llm-rubric
+        value: |
+          The summary should:
+          1. Capture both main work topics: etcd sharding PR review AND CI flakiness/e2e test timeouts
+          2. Be a single line, roughly 15 words or fewer
+          3. NOT mention the offsite/social chat
+          4. Use semicolons to separate topics if multiple
+      - type: javascript
+        value: |
+          const words = output.trim().split(/\s+/).length;
+          if (words > 25) throw new Error(`Summary is ${words} words, should be ~15 or fewer`);
+          return true;
+
+  # SUM-2: Dossier Current Work synthesis
+  - vars:
+      system_prompt: |
+        You are a dossier synthesizer. Given data about a person's recent activity (Slack messages,
+        emails, JIRA issues, meetings), synthesize 2-5 bullet points describing their current work streams.
+
+        Rules:
+        - Group related items into themes
+        - Lead each bullet with the work stream topic
+        - Write in present tense, active voice
+        - Use wiki-links for JIRA keys: [[jira/KEY|KEY]]
+      user_message: |
+        Synthesize Current Work bullets for Alex Chen based on this data:
+
+        Slack messages:
+        - #team-platform-eng: "control-plane-operator v2.8 deployed to staging" (May 6)
+        - #team-platform-eng: "found nil pointer in admission handler — fix PR incoming" (May 7)
+        - #dev-hypershift: "etcd sharding PR ready for review. Partition key uses namespace hash" (May 5)
+        - #dev-hypershift: "CI flaky again on HCP provisioning tests — timeout in cert-manager" (May 7)
+        - #team-platform-eng: "upgraded cluster-api-provider-aws to v2.9" (May 3)
+
+        JIRA issues:
+        - HCMSTRAT-285: "Implement etcd sharding for hosted control planes" — In Progress (assignee)
+        - OCPBUGS-42156: "CI flakiness in HCP provisioning e2e tests" — In Progress (assignee)
+
+        Email threads:
+        - "etcd sharding design review" — updated migration path section (May 4)
+        - "CI flakiness tracking — HCP e2e tests" — root cause: cert-manager pod restarts (May 6)
+    assert:
+      - type: llm-rubric
+        value: |
+          The output should:
+          1. Have 2-5 bullet points
+          2. Group etcd sharding work into one bullet (PR, design doc, JIRA issue are related)
+          3. Group CI flakiness into another bullet (test failures, cert-manager issue)
+          4. Mention the operator deploy or CAPA upgrade as separate work streams
+          5. Use present tense, active voice ("Working on...", "Investigating...")
+          6. Include JIRA key references
+      - type: contains
+        value: "HCMSTRAT-285"
+      - type: contains
+        value: "etcd"
+
+  # SUM-3: Digest curation — categorized bullets
+  - vars:
+      system_prompt: |
+        You are a daily note curator. Given JIRA issues, PRs, and email summaries,
+        synthesize a Digest section with 3-8 categorized bullets. Group by:
+        - **Action Required**: items needing immediate attention
+        - **Active Work Updates**: progress on ongoing work
+        - **New Information**: new emails, docs, or decisions
+
+        Use wiki-links: [[jira/KEY|KEY]] for JIRA, [[prs/repo-number|repo#number]] for PRs.
+        Be concise — 1-2 sentences per bullet. Only include groups that have items.
+      user_message: |
+        Create a Digest from today's data:
+
+        JIRA Issues needing attention:
+        - OCPBUGS-42156: CI flakiness in HCP tests — In Progress, assigned to Alex Chen, updated today
+        - HCMSTRAT-285: etcd sharding implementation — In Progress, assigned to Alex Chen
+
+        PRs:
+        - hypershift#7849: "Add etcd partition key support" — Open, has unanswered review comments
+
+        Recent emails:
+        - "Q3 OKR alignment" from Sam Taylor — needs review by Friday
+    assert:
+      - type: llm-rubric
+        value: |
+          The output should:
+          1. Have categorized sections (Action Required, Active Work, New Information or similar)
+          2. Use bold category headers
+          3. Include wiki-links for JIRA keys and PR references
+          4. Be 3-8 bullets total
+          5. Prioritize the PR with unanswered comments and the email needing review as action items
+      - type: javascript
+        value: |
+          const bullets = (output.match(/^[-*]\s/gm) || []).length;
+          if (bullets < 2) throw new Error(`Only ${bullets} bullets, expected 3-8`);
+          if (bullets > 10) throw new Error(`${bullets} bullets, expected 3-8 max`);
+          return true;
+
+  # ============================================================
+  # STRUCTURED OUTPUT (from structured-output.yaml)
+  # ============================================================
+
+  # SO-1: Wiki-link pipe escaping INSIDE tables
+  - vars:
+      system_prompt: |
+        You are a vault automation agent that generates Obsidian-compatible markdown.
+        IMPORTANT: When a wiki-link with a display alias appears inside a markdown table cell,
+        the pipe character must be escaped as \| so it isn't parsed as a column separator.
+        Example: [[jira/KEY\|KEY]] inside a table, but [[jira/KEY|KEY]] outside a table.
+      user_message: |
+        Create a markdown table of JIRA issues with columns Key, Summary, Status.
+        Include these issues:
+        - HCMSTRAT-285: "Implement etcd sharding" — In Progress
+        - OCPBUGS-42156: "CI flakiness in HCP tests" — In Progress
+
+        Use wiki-links for the Key column: [[jira/KEY\|KEY]]
+    assert:
+      - type: contains
+        value: '[[jira/HCMSTRAT-285\|HCMSTRAT-285]]'
+      - type: contains
+        value: '[[jira/OCPBUGS-42156\|OCPBUGS-42156]]'
+      - type: javascript
+        value: |
+          const lines = output.split('\n').filter(l => l.trim().startsWith('|'));
+          if (lines.length < 4) throw new Error(`Expected at least 4 table lines (header + sep + 2 data), got ${lines.length}`);
+          const sepLine = lines.find(l => l.includes('---'));
+          if (!sepLine) throw new Error('Missing table separator row (|---|)');
+          return true;
+
+  # SO-2: Info callout format
+  - vars:
+      system_prompt: |
+        You are a vault automation agent. When writing auto-generated sections,
+        always include an info callout with the generation date.
+
+        CORRECT format (use this):
+        > [!info] Auto-generated by <agent-name> on YYYY-MM-DD
+
+        INCORRECT (never do this):
+        > [[!info] ...
+
+        Obsidian callouts use SINGLE bracket [!type], not double [[.
+      user_message: |
+        Write an info callout for the project-tracker agent, dated 2026-05-07.
+    assert:
+      - type: contains
+        value: "> [!info]"
+      - type: contains
+        value: "2026-05-07"
+      - type: javascript
+        value: |
+          const match = output.match(/>\s*\[!info\]\s*Auto-(?:generated|updated)\s+(?:by\s+)?.*(?:on\s+)?2026-05-07/i);
+          if (!match) throw new Error('Info callout does not match expected format: > [!info] Auto-generated by ... on YYYY-MM-DD');
+          return true;
+
+  # SO-3: Heading hierarchy for Meeting Prep
+  - vars:
+      system_prompt: |
+        You are a project-tracker agent. When writing the Meeting Prep section,
+        use ### for the section heading and #### for individual meeting subheadings.
+
+        Format:
+        ### Meeting Prep
+        > [!info] Auto-generated...
+        #### Meeting Title (Time)
+        - bullet points
+      user_message: |
+        Write a Meeting Prep section with two meetings:
+        1. Platform Team Standup at 10:00 AM
+        2. Alex Jesse 1:1 at 2:00 PM
+
+        For each, just write "No recent activity found" as the content.
+    assert:
+      - type: contains
+        value: "### Meeting Prep"
+      - type: javascript
+        value: |
+          const h4matches = output.match(/^####\s/gm) || [];
+          if (h4matches.length < 2) throw new Error(`Expected 2 #### subheadings for meetings, found ${h4matches.length}`);
+          return true;
+      - type: not-contains
+        value: "##### "
+
+  # SO-4: People wiki-links
+  - vars:
+      system_prompt: |
+        You are a vault automation agent. When mentioning people by name,
+        use wiki-links if their People page exists. The following People pages exist:
+        - People/Alex Chen.md
+        - People/Priya Patel.md
+        - People/Sam Taylor.md
+
+        For people without pages, still use [[Name]] to create an unresolved link.
+      user_message: |
+        Write a bullet list of recent activity:
+        - Alex Chen discussed etcd sharding in #dev-hypershift
+        - Dana Kim raised an alert about staging environment
+        - Priya Patel posted about migration timeline
+
+        Use wiki-links for people names.
+    assert:
+      - type: contains
+        value: "[[Alex Chen]]"
+      - type: contains
+        value: "[[Priya Patel]]"
+      - type: contains
+        value: "[[Dana Kim]]"

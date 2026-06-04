@@ -1,0 +1,272 @@
+description: "Tool calling eval: granite4.1:8b — tool selection, schema adherence, ReplaceSection"
+
+prompts:
+  - file://prompts/tool-system-user.json
+
+providers:
+  - id: ollama:chat:granite4.1:8b
+    label: granite4.1-8b
+    config:
+      temperature: 0
+      num_predict: 8096
+      num_ctx: 32768
+      think: false
+      tools:
+        - type: function
+          function:
+            name: Read
+            description: "Read a file"
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                offset: {type: integer}
+                limit: {type: integer}
+              required: [file_path]
+        - type: function
+          function:
+            name: Glob
+            description: "Find files by pattern"
+            parameters:
+              type: object
+              properties:
+                pattern: {type: string}
+                path: {type: string}
+              required: [pattern]
+        - type: function
+          function:
+            name: Grep
+            description: "Search file contents"
+            parameters:
+              type: object
+              properties:
+                pattern: {type: string}
+                path: {type: string}
+                include: {type: string}
+              required: [pattern]
+        - type: function
+          function:
+            name: Bash
+            description: "Run a shell command"
+            parameters:
+              type: object
+              properties:
+                command: {type: string}
+                description: {type: string}
+              required: [command]
+        - type: function
+          function:
+            name: Edit
+            description: "Edit a file"
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                old_string: {type: string}
+                new_string: {type: string}
+                replace_all: {type: boolean}
+              required: [file_path, old_string, new_string]
+        - type: function
+          function:
+            name: Write
+            description: "Write a file"
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                content: {type: string}
+              required: [file_path, content]
+        - type: function
+          function:
+            name: ReplaceSection
+            description: "Replace content between %% section:<name> %% markers in a file. Use this instead of Edit for daily notes and other files with section markers."
+            parameters:
+              type: object
+              properties:
+                file_path: {type: string}
+                section: {type: string, description: "Section name (e.g. 'digest', 'conversations', 'meeting-prep')"}
+                content: {type: string, description: "New content to place between the markers (include the ### heading)"}
+              required: [file_path, section, content]
+
+tests:
+  # TC-1: Single Read tool call
+  - vars:
+      user_message: "Read the file at Work Pipeline.md"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const readCall = calls.find(c => c.function?.name === 'Read');
+          if (!readCall) throw new Error('No Read tool call found');
+          const args = typeof readCall.function.arguments === 'string' ? JSON.parse(readCall.function.arguments) : readCall.function.arguments;
+          if (!args.file_path) throw new Error('Missing file_path parameter');
+          if (!args.file_path.includes('Work Pipeline')) throw new Error('file_path does not reference Work Pipeline');
+          return true;
+
+  # TC-2: Glob tool call
+  - vars:
+      user_message: "Find all markdown files in the Projects/Work/ directory"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const globCall = calls.find(c => c.function?.name === 'Glob');
+          if (!globCall) throw new Error('No Glob tool call found');
+          const args = typeof globCall.function.arguments === 'string' ? JSON.parse(globCall.function.arguments) : globCall.function.arguments;
+          if (!args.pattern) throw new Error('Missing pattern parameter');
+          return true;
+
+  # TC-3: Bash tool call
+  - vars:
+      user_message: "What is today's date?"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const bashCall = calls.find(c => c.function?.name === 'Bash');
+          if (!bashCall) throw new Error('No Bash tool call found');
+          const args = typeof bashCall.function.arguments === 'string' ? JSON.parse(bashCall.function.arguments) : bashCall.function.arguments;
+          if (!args.command) throw new Error('Missing command parameter');
+          return true;
+
+  # TC-4: Grep with path scoping
+  - vars:
+      user_message: "Search for the text 'assignee' in all files under jira/"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const grepCall = calls.find(c => c.function?.name === 'Grep');
+          if (!grepCall) throw new Error('No Grep tool call found');
+          const args = typeof grepCall.function.arguments === 'string' ? JSON.parse(grepCall.function.arguments) : grepCall.function.arguments;
+          if (!args.pattern || !args.pattern.includes('assignee')) throw new Error('pattern missing "assignee"');
+          return true;
+
+  # TC-5: Edit tool call with correct parameters
+  - vars:
+      user_message: |
+        Edit the file daily-note.md: replace "Auto-curated on 2026-05-06" with "Auto-curated on 2026-05-07"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const editCall = calls.find(c => c.function?.name === 'Edit');
+          if (!editCall) throw new Error('No Edit tool call found');
+          const args = typeof editCall.function.arguments === 'string' ? JSON.parse(editCall.function.arguments) : editCall.function.arguments;
+          if (!args.file_path) throw new Error('Missing file_path');
+          if (!args.old_string || !args.old_string.includes('2026-05-06')) throw new Error('old_string missing old date');
+          if (!args.new_string || !args.new_string.includes('2026-05-07')) throw new Error('new_string missing new date');
+          return true;
+
+  # TC-6: Schema adherence — no invented parameters
+  - vars:
+      user_message: "Read the contents of People/Alex Chen.md starting from line 10"
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const readCall = calls.find(c => c.function?.name === 'Read');
+          if (!readCall) throw new Error('No Read tool call found');
+          const args = typeof readCall.function.arguments === 'string' ? JSON.parse(readCall.function.arguments) : readCall.function.arguments;
+          const validParams = new Set(['file_path', 'offset', 'limit']);
+          const extraParams = Object.keys(args).filter(k => !validParams.has(k));
+          if (extraParams.length > 0) throw new Error('Invented parameters: ' + extraParams.join(', '));
+          return true;
+
+  # TC-7: No hallucinated tools
+  - vars:
+      user_message: "Search the internet for the latest Kubernetes release notes"
+    assert:
+      - type: javascript
+        value: |
+          try {
+            const calls = Array.isArray(output) ? output : (typeof output === 'string' ? JSON.parse(output) : []);
+            if (Array.isArray(calls) && calls.length > 0) {
+              const validNames = ['Read','Glob','Grep','Bash','Edit','Write','ReplaceSection'];
+              const invalidTools = calls.filter(c => c.function?.name && !validNames.includes(c.function.name));
+              if (invalidTools.length > 0) throw new Error('Called non-existent tools: ' + invalidTools.map(c=>c.function.name).join(', '));
+            }
+          } catch(e) {
+            if (e.message.includes('Called non-existent')) throw e;
+          }
+          return true;
+
+  # TC-8: ReplaceSection — prefer over Edit for section markers
+  - vars:
+      user_message: |
+        Update the digest section in the file daily/2026/05-May/2026-05-07-Wednesday.md.
+        The file uses section markers like %% section:digest %% and %% /section:digest %%.
+        The new digest content should be:
+
+        ### Digest
+
+        > [!info] Auto-curated on 2026-05-07
+
+        **Action Required**
+        - Review Q3 OKR doc by Friday
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const rsCall = calls.find(c => c.function?.name === 'ReplaceSection');
+          if (!rsCall) throw new Error('Should use ReplaceSection for files with section markers, not Edit');
+          const args = typeof rsCall.function.arguments === 'string' ? JSON.parse(rsCall.function.arguments) : rsCall.function.arguments;
+          if (!args.section || args.section !== 'digest') throw new Error(`section should be "digest", got "${args.section}"`);
+          if (!args.content || !args.content.includes('Digest')) throw new Error('content missing Digest heading');
+          return true;
+
+  # TC-9: Multiple parallel tool calls
+  - vars:
+      user_message: |
+        I need to read three files at once:
+        - People/Alex Chen.md
+        - People/Priya Patel.md
+        - People/Sam Taylor.md
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const readCalls = calls.filter(c => c.function?.name === 'Read');
+          if (readCalls.length < 3) throw new Error(`Expected 3 Read calls, got ${readCalls.length}`);
+          const paths = readCalls.map(c => {
+            const args = typeof c.function.arguments === 'string' ? JSON.parse(c.function.arguments) : c.function.arguments;
+            return args.file_path;
+          });
+          if (!paths.some(p => p.includes('Alex'))) throw new Error('Missing Alex Chen read');
+          if (!paths.some(p => p.includes('Priya'))) throw new Error('Missing Priya Patel read');
+          if (!paths.some(p => p.includes('Sam'))) throw new Error('Missing Sam Taylor read');
+          return true;
+
+  # TC-10: ReplaceSection with correct content format (no markers in content)
+  - vars:
+      user_message: |
+        Use ReplaceSection to update the "conversations" section in daily/2026/05-May/2026-05-07-Wednesday.md.
+        Content should be:
+
+        ### Conversations
+
+        > [!info] Auto-updated on 2026-05-07 14:30
+
+        - [[Alex Chen]] — etcd sharding PR review; CI flakiness troubleshooting
+        - [[Priya Patel]] — ROSA boundary architecture diagram update
+    assert:
+      - type: is-valid-openai-tools-call
+      - type: javascript
+        value: |
+          const calls = Array.isArray(output) ? output : [output];
+          const rsCall = calls.find(c => c.function?.name === 'ReplaceSection');
+          if (!rsCall) throw new Error('Should use ReplaceSection');
+          const args = typeof rsCall.function.arguments === 'string' ? JSON.parse(rsCall.function.arguments) : rsCall.function.arguments;
+          if (args.section !== 'conversations') throw new Error(`section should be "conversations", got "${args.section}"`);
+          if (args.content.includes('%% section')) throw new Error('content should NOT include section markers');
+          if (!args.content.includes('### Conversations')) throw new Error('content should include ### heading');
+          if (!args.content.includes('[!info]')) throw new Error('content should include info callout');
+          return true;
