@@ -16,7 +16,7 @@ _find_vault_root() {
 }
 VAULT_DIR="${VAULT_DIR:-$(_find_vault_root)}"
 LOG_FILE="$HOME/Library/Logs/daily-work-sync/stdout.log"
-STATUS_FILE="$VAULT_DIR/sync-status.md"
+STATUS_FILE="$VAULT_DIR/.claude/sync-status.md"
 
 TODAY=$(date +%Y-%m-%d)
 YEAR=$(date +%Y)

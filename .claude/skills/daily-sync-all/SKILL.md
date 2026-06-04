@@ -27,20 +27,33 @@ bash $VAULT_DIR/.claude/skills/daily-sync-all/scripts/sync_all_sources.sh
 ```
 
 The script runs these steps and logs progress:
+
+**Data steps (every hour):**
 1. Ensure today's daily note exists
 2. `pkm-sync sync --since 1d` — Gmail, Drive, Slack, Calendar, Jira
-3. Calendar sync → updates Meetings table in daily note
-4. JIRA + GitHub PR notes → `jira/` and `prs/` folders
-5. Project sync → enriches `Projects/Work/` notes with related items
-6. `pkm-sync index --since 1d` — update vector embeddings
-7. `project-tracker` agent — Meeting Prep, Active Projects, Deadlines
-8. `daily-curator` agent — writes `### Digest` and `### Action Items`
+3. Normalize attendees + create People pages (two-pass)
+4. Calendar sync → updates Meetings table in daily note
+5. JIRA + GitHub PR notes → `jira/` and `prs/` folders
+6. Project sync → enriches `Projects/Work/` notes with related items
+7. `pkm-sync index --since 1d` — update vector embeddings
+
+**Agent steps (8am, 12pm, 5pm only — or `--force-agents`):**
+8. `project-tracker` agent — Meeting Prep, Active Projects, Deadlines
+9. `daily-curator` agent — writes `### Digest` and `### Action Items`
+10. `dossier-synthesizer` agent — People dossier updates
+11. `conversation-summarizer` agent — Slack DM + email summaries
+
+Agent steps also skip if their section was updated <2 hours ago (staleness check).
 
 Logs: `~/Library/Logs/daily-work-sync/`
 
-If the user said "sync only" / "just sync data", run the script with `--skip-index` or just
-run it normally — steps 7 and 8 are agents and will run separately. Report any step failures
-but don't stop on non-fatal errors.
+Flags:
+- `--skip-index` — skip vector indexing (step 7)
+- `--force-agents` — run agent steps regardless of time-of-day
+- `--data-only` — skip agent steps entirely
+
+If the user said "sync only" / "just sync data", run with `--data-only`.
+Report any step failures but don't stop on non-fatal errors.
 
 ---
 

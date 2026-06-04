@@ -174,27 +174,6 @@ def extract_slack_conversations(target_date: str) -> list[dict]:
 
         # 3. Public channel threads where Jesse sent 2+ messages
         thread_rows = conn.execute("""
-            SELECT s.channel_name, s.thread_ts,
-                   COUNT(CASE WHEN s.author = ? THEN 1 END) as jesse_count,
-                   COUNT(*) as total_count,
-                   GROUP_CONCAT(DISTINCT s.author) as authors
-            FROM slack_messages s
-            WHERE date(s.created_at) = ?
-              AND s.thread_ts IS NOT NULL
-              AND s.thread_ts != ''
-              AND s.author = ?
-              AND s.channel_name NOT LIKE 'mpdm-%'
-              AND NOT (? || ? IN (
-                SELECT channel_name FROM slack_messages WHERE channel_name = s.channel_name AND channel_name LIKE '% %' LIMIT 1
-              ))
-            GROUP BY s.channel_name, s.thread_ts
-            HAVING jesse_count >= 2
-            ORDER BY jesse_count DESC
-            LIMIT 5
-        """, (MY_NAME, target_date, MY_NAME, '', '')).fetchall()
-
-        # Simpler thread query
-        thread_rows = conn.execute("""
             SELECT channel_name, thread_ts,
                    SUM(CASE WHEN author = ? THEN 1 ELSE 0 END) as jesse_count,
                    COUNT(*) as total_count
