@@ -1,50 +1,16 @@
-description: "Structured markdown output — wiki-links, pipe escaping, tables, headings"
+description: "structured-output — gemma4:12b-128k on remote ollama.jaggars.cc"
 
 prompts:
   - file://prompts/system-user.json
 
 providers:
-  - id: vertex:claude-haiku-4-5
-    label: claude-haiku
-    config:
-      projectId: itpc-gcp-hcm-pe-eng-claude
-      region: us-east5
-      anthropic_version: vertex-2023-10-16
-      max_tokens: 2048
-      temperature: 0
-
-  - id: vertex:claude-sonnet-4-6
-    label: claude-sonnet
-    config:
-      projectId: itpc-gcp-hcm-pe-eng-claude
-      region: us-east5
-      anthropic_version: vertex-2023-10-16
-      max_tokens: 2048
-      temperature: 0
-
-  - id: vertex:claude-opus-4-6
-    label: claude-opus
-    config:
-      projectId: itpc-gcp-hcm-pe-eng-claude
-      region: us-east5
-      anthropic_version: vertex-2023-10-16
-      max_tokens: 2048
-      temperature: 0
-
-  - id: ollama:chat:gemma4:e4b
-    label: gemma4-e4b
+  - id: ollama:chat:gemma4:12b-128k
+    label: gemma4-12b-remote
     config:
       temperature: 0
-      num_predict: 16384
+      num_predict: 8096
       num_ctx: 32768
-
-  - id: ollama:chat:gemma4:26b
-    label: gemma4-26b
-    config:
-      temperature: 0
-      num_predict: 16384
-      num_ctx: 32768
-
+      think: false
 
 tests:
   # Test 1: Wiki-link pipe escaping INSIDE tables

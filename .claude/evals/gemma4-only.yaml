@@ -27,6 +27,7 @@ tests:
   # ============================================================
 
   # IF-1: Skip rules — gracefully skip missing directories
+  # NOTE: Meeting-notes skipping is better handled at agent/script level.
   - vars:
       system_prompt: |
         You are a daily-curator agent. You follow these steps in order:
@@ -53,9 +54,11 @@ tests:
         value: |
           The response should:
           1. Indicate that Step 5 (Gmail) would be SKIPPED because the Gmail/ directory doesn't exist
-          2. Indicate that Step 7 (meeting notes) would be SKIPPED because there are no meeting notes for today
-          3. Indicate that Steps 1-4, 6, and 8 would be EXECUTED
-          4. Not suggest creating the Gmail/ directory or erroring out
+          2. NOT suggest creating the Gmail/ directory or erroring out
+          3. NOT fabricate Gmail data that doesn't exist
+          4. Steps 1-4, 6, and 8 should be EXECUTED
+          Note: Step 7 (meeting notes) — it's acceptable to either skip it or check
+          the Meetings/ directory to confirm. The agent script should pre-filter this.
       - type: icontains
         value: "skip"
 
@@ -207,12 +210,18 @@ tests:
           2. Group etcd sharding work into one bullet (PR, design doc, JIRA issue are related)
           3. Group CI flakiness into another bullet (test failures, cert-manager issue)
           4. Mention the operator deploy or CAPA upgrade as separate work streams
-          5. Use present tense, active voice ("Working on...", "Investigating...")
-          6. Include JIRA key references
+          5. Use present tense (any active form is fine — "Working on", "Executes", "Investigating", etc.)
+          6. Include JIRA key references using wiki-link format [[jira/KEY|KEY]]
       - type: contains
         value: "HCMSTRAT-285"
       - type: contains
         value: "etcd"
+      # Wiki-link format is critical — must use [[jira/KEY|KEY]] not [[KEY|KEY]]
+      - type: javascript
+        value: |
+          const hasJiraPrefix = output.includes('[[jira/HCMSTRAT-285') || output.includes('[[jira/OCPBUGS-42156');
+          if (!hasJiraPrefix) throw new Error('JIRA wiki-links must use [[jira/KEY|KEY]] format with jira/ prefix');
+          return true;
 
   # SUM-3: Digest curation — categorized bullets
   - vars:

@@ -21,6 +21,7 @@
 #   --skip-index     Skip step 7 (vector indexing)
 #   --force-agents   Run agent steps regardless of time-of-day
 #   --data-only      Skip agent steps entirely
+#   --agents-only    Skip data steps, run agents immediately (implies --force-agents)
 
 set -u
 
@@ -53,10 +54,12 @@ LOG_DIR="${LOG_DIR:-$HOME/Library/Logs/daily-work-sync}"
 SKIP_INDEX=false
 FORCE_AGENTS=false
 DATA_ONLY=false
+AGENTS_ONLY=false
 for arg in "$@"; do
     [ "$arg" = "--skip-index" ] && SKIP_INDEX=true
     [ "$arg" = "--force-agents" ] && FORCE_AGENTS=true
     [ "$arg" = "--data-only" ] && DATA_ONLY=true
+    [ "$arg" = "--agents-only" ] && AGENTS_ONLY=true && FORCE_AGENTS=true
 done
 
 # Agent steps run at 8am, 12pm, and 5pm (±30min window)
@@ -100,13 +103,19 @@ step() {
 
 log "=== Daily Sync All: Started ==="
 
+if [ "$AGENTS_ONLY" = true ]; then
+    log "Running agents-only mode (skipping data steps 1-7)"
+fi
+
+if [ "$AGENTS_ONLY" = false ]; then
+
 # Step 1: Ensure daily note exists
-step "Step 1/11: Ensuring today's daily note exists"
+step "Step 1/12: Ensuring today's daily note exists"
 bash "$SKILL_DIR/scripts/ensure_daily_note.sh" \
     || log "WARNING: ensure_daily_note had errors (non-fatal)"
 
 # Step 2: pkm-sync sync (Gmail archive, Drive, Slack, Calendar, Jira)
-step "Step 2/11: pkm-sync sync --since 1d"
+step "Step 2/12: pkm-sync sync --since 1d"
 if command -v pkm-sync &>/dev/null; then
     pkm-sync sync --since 1d \
         || log "WARNING: pkm-sync sync had errors (non-fatal)"
@@ -115,7 +124,7 @@ else
 fi
 
 # Step 3a: Normalize attendees in pkm-sync meeting notes (pass 1)
-step "Step 3a/11: Normalize attendee identifiers in meeting notes (pass 1)"
+step "Step 3a/12: Normalize attendee identifiers in meeting notes (pass 1)"
 NORMALIZE_ATTENDEES="$VAULT_DIR/.claude/skills/calendar-sync-lib/normalize_attendees.py"
 if [ -f "$NORMALIZE_ATTENDEES" ]; then
     python3 "$NORMALIZE_ATTENDEES" "$VAULT_DIR/Meetings/" \
@@ -125,7 +134,7 @@ else
 fi
 
 # Step 3b: Auto-create People pages for unresolved attendees
-step "Step 3b/11: Auto-create People pages for unresolved attendees"
+step "Step 3b/12: Auto-create People pages for unresolved attendees"
 CREATE_PEOPLE="$VAULT_DIR/.claude/skills/calendar-sync-lib/create_people_pages.py"
 if [ -f "$CREATE_PEOPLE" ]; then
     python3 "$CREATE_PEOPLE" "$VAULT_DIR/Meetings/" \
@@ -135,14 +144,14 @@ else
 fi
 
 # Step 3c: Re-run normalize_attendees to resolve newly-created People pages
-step "Step 3c/11: Normalize attendee identifiers in meeting notes (pass 2)"
+step "Step 3c/12: Normalize attendee identifiers in meeting notes (pass 2)"
 if [ -f "$NORMALIZE_ATTENDEES" ]; then
     python3 "$NORMALIZE_ATTENDEES" "$VAULT_DIR/Meetings/" \
         || log "WARNING: normalize_attendees (pass 2) had errors (non-fatal)"
 fi
 
 # Step 4: Calendar sync → Meetings table in daily note
-step "Step 4/11: Calendar sync"
+step "Step 4/12: Calendar sync"
 if [ -f "$CALENDAR_SYNC" ]; then
     bash "$CALENDAR_SYNC" \
         || log "WARNING: calendar sync had errors (non-fatal)"
@@ -151,7 +160,7 @@ else
 fi
 
 # Step 5: Work sync (JIRA + GitHub PRs)
-step "Step 5/11: Work sync (JIRA + PRs)"
+step "Step 5/12: Work sync (JIRA + PRs)"
 if [ -f "$WORK_SYNC" ]; then
     "$UV" run "$WORK_SYNC" "$VAULT_DIR" \
         || log "WARNING: work sync had errors (non-fatal)"
@@ -160,7 +169,7 @@ else
 fi
 
 # Step 6: Project sync (Related Items sections)
-step "Step 6/11: Project sync"
+step "Step 6/12: Project sync"
 PROJECT_SYNC="$VAULT_DIR/.claude/skills/project-sync/scripts/project_sync.py"
 if [ -f "$PROJECT_SYNC" ]; then
     "$UV" run "$PROJECT_SYNC" "$VAULT_DIR" \
@@ -169,9 +178,9 @@ fi
 
 # Step 7: Update vector index
 if [ "$SKIP_INDEX" = true ]; then
-    step "Step 7/11: Skipping vector index (--skip-index)"
+    step "Step 7/12: Skipping vector index (--skip-index)"
 else
-    step "Step 7/11: pkm-sync index --since 1d"
+    step "Step 7/12: pkm-sync index --since 1d"
     if command -v pkm-sync &>/dev/null; then
         pkm-sync index --since 1d \
             || log "WARNING: pkm-sync index had errors (non-fatal)"
@@ -180,32 +189,25 @@ else
     fi
 fi
 
+fi # end AGENTS_ONLY guard for data steps 1-7
+
 # --- Agent steps (time-gated: 8am, 12pm, 5pm or --force-agents) ---
+# Dependency-based ordering:
+#   Phase 1 (independent): meeting-prepper, conversation-summarizer
+#   Phase 2 (independent): project-updater (writes Projects/*.md)
+#   Phase 3 (dependent):   daily-summarizer (needs 8a), daily-curator (needs all above)
+# Dossier runs on its own daily schedule via run_dossier.sh
 export AGENT_TRIGGER="scheduled"
 AGENT_RUNNER="$SKILL_DIR/scripts/run_agent.py"
 
 if should_run_agents; then
     log "Agent window active (hour=$(date +%H)), running agent steps"
 
-    # Step 8a: Run project-updater driver (hybrid: Python discovery + LLM writing)
-    step "Step 8a/13: project-updater driver"
-    export AGENT_PIPELINE_STEP="step_8a_project_updater"
-    PROJECT_DRIVER="$SKILL_DIR/scripts/project_update_driver.py"
-    if [ -f "$PROJECT_DRIVER" ]; then
-        if section_is_fresh "Auto-generated by project-updater"; then
-            log "SKIP: project-updater section is fresh (<2h old)"
-        else
-            (cd "$VAULT_DIR" && "$UV" run "$PROJECT_DRIVER" \
-                2>&1) \
-                || log "WARNING: project-updater driver had errors (non-fatal)"
-        fi
-    else
-        log "WARNING: $PROJECT_DRIVER not found, skipping project-updater"
-    fi
+    # ── Phase 1: Independent steps (no dependencies on each other) ──
 
-    # Step 8b: Run meeting-prepper agent (Meeting Prep section)
-    step "Step 8b/13: meeting-prepper agent"
-    export AGENT_PIPELINE_STEP="step_8b_meeting_prepper"
+    # Step 8: Run meeting-prepper agent (Meeting Prep section)
+    step "Step 8/12: meeting-prepper agent"
+    export AGENT_PIPELINE_STEP="step_8_meeting_prepper"
     if [ -f "$AGENT_RUNNER" ]; then
         if section_is_fresh "Auto-generated by meeting-prepper"; then
             log "SKIP: meeting-prepper section is fresh (<2h old)"
@@ -220,71 +222,9 @@ if should_run_agents; then
         log "WARNING: $AGENT_RUNNER not found, skipping meeting-prepper"
     fi
 
-    # Step 8c: Run daily-summarizer agent (Active Projects + Upcoming Deadlines)
-    step "Step 8c/13: daily-summarizer agent"
-    export AGENT_PIPELINE_STEP="step_8c_daily_summarizer"
-    if [ -f "$AGENT_RUNNER" ]; then
-        if section_is_fresh "Auto-updated by daily-summarizer"; then
-            log "SKIP: daily-summarizer section is fresh (<2h old)"
-        else
-            (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
-                daily-summarizer \
-                "Build the Active Projects and Upcoming Deadlines sections for today's daily note." \
-                2>&1) \
-                || log "WARNING: daily-summarizer agent had errors (non-fatal)"
-        fi
-    else
-        log "WARNING: $AGENT_RUNNER not found, skipping daily-summarizer"
-    fi
-
-    # Step 9: Run daily-curator agent (Digest + Action Items)
-    step "Step 9/11: daily-curator agent"
-    export AGENT_PIPELINE_STEP="step_9_daily_curator"
-    if [ -f "$AGENT_RUNNER" ]; then
-        if section_is_fresh "Auto-curated on"; then
-            log "SKIP: daily-curator section is fresh (<2h old)"
-        else
-            (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
-                daily-curator \
-                "Curate today's daily note: write the Digest and Action Items sections." \
-                2>&1) \
-                || log "WARNING: daily-curator agent had errors (non-fatal)"
-        fi
-    else
-        log "WARNING: $AGENT_RUNNER not found, skipping daily-curator"
-    fi
-
-    # Step 10: Build people dossiers (today's meeting attendees + DM partners)
-    step "Step 10/11: People dossier updates"
-    export AGENT_PIPELINE_STEP="step_10_dossier_synthesizer"
-    DOSSIER_EXTRACT="$VAULT_DIR/.claude/skills/people-dossier/scripts/build_dossier.py"
-    if [ -f "$DOSSIER_EXTRACT" ]; then
-        DOSSIER_JSON=$("$UV" run "$DOSSIER_EXTRACT" "$VAULT_DIR" --mode daily 2>&1 | tee /dev/stderr | grep -v '^\[' | grep -v '^WARNING' | tail -1) \
-            || log "WARNING: dossier extraction had errors (non-fatal)"
-        if [ -n "$DOSSIER_JSON" ] && [ -f "$DOSSIER_JSON" ]; then
-            DOSSIER_DRIVER="$SKILL_DIR/scripts/dossier_driver.py"
-            if [ -f "$DOSSIER_DRIVER" ]; then
-                (cd "$VAULT_DIR" && "$UV" run "$DOSSIER_DRIVER" \
-                    "$DOSSIER_JSON" \
-                    2>&1) \
-                    || log "WARNING: dossier driver had errors (non-fatal)"
-            else
-                (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
-                    dossier-synthesizer \
-                    "Synthesize people dossiers from $DOSSIER_JSON" \
-                    2>&1) \
-                    || log "WARNING: dossier-synthesizer agent had errors (non-fatal)"
-            fi
-        else
-            log "WARNING: dossier extraction produced no output file, skipping synthesizer"
-        fi
-    else
-        log "WARNING: $DOSSIER_EXTRACT not found, skipping people dossier"
-    fi
-
-    # Step 11: Extract and summarize today's conversations (Slack DMs + email)
-    step "Step 11/11: Conversation sync"
-    export AGENT_PIPELINE_STEP="step_11_conversation_summarizer"
+    # Step 9: Extract and summarize today's conversations (Slack DMs + email)
+    step "Step 9/12: conversation-summarizer"
+    export AGENT_PIPELINE_STEP="step_9_conversation_summarizer"
     CONV_EXTRACT="$SKILL_DIR/scripts/extract_conversations.py"
     if [ -f "$CONV_EXTRACT" ]; then
         CONV_JSON=$("$UV" run "$CONV_EXTRACT" "$VAULT_DIR" 2>&1 | tee /dev/stderr | grep -v '^\[' | grep -v '^WARNING' | grep -v '^Extract' | tail -1) \
@@ -301,8 +241,64 @@ if should_run_agents; then
     else
         log "WARNING: $CONV_EXTRACT not found, skipping conversation sync"
     fi
+
+    # ── Phase 2: Project updater (writes to Projects/*.md, independent of phase 1) ──
+
+    # Step 10: Run project-updater driver (batch mode: Python discovery + LLM writing)
+    step "Step 10/12: project-updater driver"
+    export AGENT_PIPELINE_STEP="step_10_project_updater"
+    PROJECT_DRIVER="$SKILL_DIR/scripts/project_update_driver.py"
+    if [ -f "$PROJECT_DRIVER" ]; then
+        if section_is_fresh "Auto-generated by project-updater"; then
+            log "SKIP: project-updater section is fresh (<2h old)"
+        else
+            (cd "$VAULT_DIR" && "$UV" run "$PROJECT_DRIVER" \
+                2>&1) \
+                || log "WARNING: project-updater driver had errors (non-fatal)"
+        fi
+    else
+        log "WARNING: $PROJECT_DRIVER not found, skipping project-updater"
+    fi
+
+    # ── Phase 3: Dependent steps (need phase 1 + 2 complete) ──
+
+    # Step 11: Run daily-summarizer agent (Active Projects + Upcoming Deadlines)
+    # Depends on: project-updater (reads updated project notes)
+    step "Step 11/12: daily-summarizer agent"
+    export AGENT_PIPELINE_STEP="step_11_daily_summarizer"
+    if [ -f "$AGENT_RUNNER" ]; then
+        if section_is_fresh "Auto-updated by daily-summarizer"; then
+            log "SKIP: daily-summarizer section is fresh (<2h old)"
+        else
+            (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
+                daily-summarizer \
+                "Build the Active Projects and Upcoming Deadlines sections for today's daily note." \
+                2>&1) \
+                || log "WARNING: daily-summarizer agent had errors (non-fatal)"
+        fi
+    else
+        log "WARNING: $AGENT_RUNNER not found, skipping daily-summarizer"
+    fi
+
+    # Step 12: Run daily-curator agent (Digest + Action Items)
+    # Depends on: meeting-prepper, conversation-summarizer, daily-summarizer
+    step "Step 12/12: daily-curator agent"
+    export AGENT_PIPELINE_STEP="step_12_daily_curator"
+    if [ -f "$AGENT_RUNNER" ]; then
+        if section_is_fresh "Auto-curated on"; then
+            log "SKIP: daily-curator section is fresh (<2h old)"
+        else
+            (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
+                daily-curator \
+                "Curate today's daily note: write the Digest and Action Items sections." \
+                2>&1) \
+                || log "WARNING: daily-curator agent had errors (non-fatal)"
+        fi
+    else
+        log "WARNING: $AGENT_RUNNER not found, skipping daily-curator"
+    fi
 else
-    log "Agent window not active (hour=$(date +%H)), skipping agent steps 8-11"
+    log "Agent window not active (hour=$(date +%H)), skipping agent steps 8-12"
 fi
 
 log ""

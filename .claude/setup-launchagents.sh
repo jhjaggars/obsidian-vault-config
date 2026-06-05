@@ -29,13 +29,16 @@ GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.confi
 ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-opusplan}"
 ANTHROPIC_DEFAULT_SONNET_MODEL="${ANTHROPIC_DEFAULT_SONNET_MODEL:-claude-sonnet-4-6[1m]}"
 ANTHROPIC_DEFAULT_OPUS_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL:-claude-opus-4-6}"
-ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-claude-haiku-4-6}"
+ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-claude-haiku-4-5}"
+DAILY_SYNC_MODEL="${DAILY_SYNC_MODEL:-claude-haiku-4-5}"
+DOSSIER_CONCURRENCY="${DOSSIER_CONCURRENCY:-4}"
 
 DASHBOARD_VENV="${HOME}/.local/share/agent-metrics-dashboard/.venv"
 DASHBOARD_PORT="${DASHBOARD_PORT:-9847}"
 
 LABELS=(
     "com.user.daily-work-sync"
+    "com.user.daily-dossier-sync"
     "com.user.sync-watchdog"
     "com.user.weekly-gap-analysis"
     "com.user.agent-metrics-dashboard"
@@ -91,6 +94,10 @@ generate_daily_work_sync() {
         <string>${ANTHROPIC_DEFAULT_OPUS_MODEL}</string>
         <key>ANTHROPIC_DEFAULT_HAIKU_MODEL</key>
         <string>${ANTHROPIC_DEFAULT_HAIKU_MODEL}</string>
+        <key>DAILY_SYNC_MODEL</key>
+        <string>${DAILY_SYNC_MODEL}</string>
+        <key>DOSSIER_CONCURRENCY</key>
+        <string>${DOSSIER_CONCURRENCY}</string>
     </dict>
 
     <key>StandardOutPath</key>
@@ -197,6 +204,73 @@ generate_weekly_gap_analysis() {
 EOF
 }
 
+generate_daily_dossier_sync() {
+    cat > "$(plist_file com.user.daily-dossier-sync)" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.daily-dossier-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>${VAULT_DIR}/.claude/skills/daily-sync-all/scripts/run_dossier.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>22</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>${VAULT_DIR}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${AGENT_PATH}</string>
+        <key>HOME</key>
+        <string>${HOME}</string>
+        <key>JIRA_API_TOKEN</key>
+        <string>${JIRA_API_TOKEN}</string>
+        <key>CLAUDE_CODE_USE_VERTEX</key>
+        <string>${CLAUDE_CODE_USE_VERTEX}</string>
+        <key>ANTHROPIC_VERTEX_PROJECT_ID</key>
+        <string>${ANTHROPIC_VERTEX_PROJECT_ID}</string>
+        <key>GOOGLE_APPLICATION_CREDENTIALS</key>
+        <string>${GOOGLE_APPLICATION_CREDENTIALS}</string>
+        <key>ANTHROPIC_MODEL</key>
+        <string>${ANTHROPIC_MODEL}</string>
+        <key>ANTHROPIC_DEFAULT_SONNET_MODEL</key>
+        <string>${ANTHROPIC_DEFAULT_SONNET_MODEL}</string>
+        <key>ANTHROPIC_DEFAULT_OPUS_MODEL</key>
+        <string>${ANTHROPIC_DEFAULT_OPUS_MODEL}</string>
+        <key>ANTHROPIC_DEFAULT_HAIKU_MODEL</key>
+        <string>${ANTHROPIC_DEFAULT_HAIKU_MODEL}</string>
+        <key>DAILY_SYNC_MODEL</key>
+        <string>${DAILY_SYNC_MODEL}</string>
+        <key>DOSSIER_CONCURRENCY</key>
+        <string>${DOSSIER_CONCURRENCY}</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>${HOME}/Library/Logs/daily-work-sync/dossier-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>${HOME}/Library/Logs/daily-work-sync/dossier-stderr.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+EOF
+}
+
 generate_agent_metrics_dashboard() {
     cat > "$(plist_file com.user.agent-metrics-dashboard)" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -295,6 +369,7 @@ cmd_install() {
 
     echo "Generating plists..."
     generate_daily_work_sync
+    generate_daily_dossier_sync
     generate_sync_watchdog
     generate_weekly_gap_analysis
     generate_agent_metrics_dashboard
