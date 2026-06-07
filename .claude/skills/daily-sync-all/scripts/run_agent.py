@@ -15,6 +15,7 @@ Set AGENT_PROVIDER=ollama to use Ollama. Configure with:
 """
 
 import os
+import subprocess
 import sys
 import time
 import random
@@ -79,7 +80,9 @@ def _run_anthropic(system_prompt: str, prompt: str, agent_name: str):
     else:
         client = anthropic.Anthropic()
 
-    model = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6[1m]")
+    model = os.environ.get("DAILY_SYNC_MODEL") \
+        or os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL") \
+        or "claude-haiku-4-5"
     if os.environ.get("CLAUDE_CODE_USE_VERTEX"):
         model = model.split("[")[0]
 
@@ -276,6 +279,25 @@ def main():
     agent_name = sys.argv[1]
     prompt = " ".join(sys.argv[2:])
     system_prompt = load_agent(agent_name)
+
+    # Resolve daily note path and inject into prompt so agents don't have to discover it
+    try:
+        result = subprocess.run("obsidian daily:path", shell=True, capture_output=True, text=True, timeout=5)
+        daily_note_path = result.stdout.strip() if result.returncode == 0 else None
+    except Exception:
+        daily_note_path = None
+    if not daily_note_path:
+        from datetime import datetime as _dt
+        _now = _dt.now()
+        daily_note_path = os.path.join(
+            VAULT_DIR, "daily",
+            _now.strftime("%Y"),
+            _now.strftime("%m-%B"),
+            _now.strftime("%Y-%m-%d-%A") + ".md",
+        )
+    if daily_note_path:
+        prompt = f"Today's daily note is at: {daily_note_path}\n\n{prompt}"
+        print(f"[daily-note] {daily_note_path}", file=sys.stderr, flush=True)
 
     provider = os.environ.get("AGENT_PROVIDER", "anthropic").lower()
 
