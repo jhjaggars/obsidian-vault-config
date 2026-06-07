@@ -250,11 +250,15 @@ if should_run_agents; then
         CONV_JSON=$("$UV" run "$CONV_EXTRACT" "$VAULT_DIR" 2>&1 | tee /dev/stderr | grep -v '^\[' | grep -v '^WARNING' | grep -v '^Extract' | tail -1) \
             || log "WARNING: conversation extraction had errors (non-fatal)"
         if [ -n "$CONV_JSON" ] && [ -f "$CONV_JSON" ]; then
-            (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
-                conversation-summarizer \
-                "Summarize conversations from $CONV_JSON into today's daily note." \
-                2>&1) \
-                || log "WARNING: conversation-summarizer agent had errors (non-fatal)"
+            if grep -q '"conversations": \[\]' "$CONV_JSON" 2>/dev/null; then
+                log "SKIP: no conversations extracted today, skipping conversation-summarizer"
+            else
+                (cd "$VAULT_DIR" && "$UV" run "$AGENT_RUNNER" \
+                    conversation-summarizer \
+                    "Summarize conversations from $CONV_JSON into today's daily note." \
+                    2>&1) \
+                    || log "WARNING: conversation-summarizer agent had errors (non-fatal)"
+            fi
         else
             log "WARNING: conversation extraction produced no output file, skipping summarizer"
         fi
