@@ -29,6 +29,10 @@
     {
       "folder": "Reviews",
       "template": "Templates/Review Template.md"
+    },
+    {
+      "folder": "Projects",
+      "template": "Templates/Project.md"
     }
   ],
   "syntax_highlighting": true,

@@ -1,0 +1,16 @@
+{
+  "frames": [
+    {
+      "url": "http://localhost:9847",
+      "displayName": "Agent Metrics",
+      "icon": "bar-chart-2",
+      "hideOnMobile": true,
+      "addRibbonIcon": true,
+      "openInCenter": true,
+      "zoomLevel": 1,
+      "forceIframe": false,
+      "customCss": ""
+    }
+  ],
+  "padding": 5
+}
