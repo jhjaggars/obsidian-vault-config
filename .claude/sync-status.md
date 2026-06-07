@@ -1,30 +1,30 @@
 ---
-updated: 2026-06-03 19:44
+updated: 2026-06-07 18:50
 ---
 
 # Sync Status
 
-> [!info] Last checked: 2026-06-03 19:44
+> [!info] Last checked: 2026-06-07 18:50
 
 ## Pipeline Health
 
-✅ Last run: `2026-06-03 19:13:58` (0h ago)
-- Last start: `2026-06-03 19:08:41`
+✅ Last run: `2026-06-07 18:16:58` (0h ago)
+- Last start: `2026-06-07 18:14:26`
 - Warnings in log: 115
 
-## Today's Daily Note (2026-06-03)
+## Today's Daily Note (2026-06-07)
 
 | Section | Status |
 |---------|--------|
 | Note exists | ✅ |
 | Meetings table | ✅ |
-| Meeting Prep | ✅ |
+| Meeting Prep | ❌ |
 | Digest | ✅ |
 | Action Items | ✅ |
-| Active Projects | ✅ |
+| Active Projects | ❌ |
 
 ## Quick Links
 
-- [[daily/2026/06-June/2026-06-03-Wednesday|Today's Note]]
+- [[daily/2026/06-June/2026-06-07-Sunday|Today's Note]]
 - [Sync log](file:///Users/jjaggars/Library/Logs/daily-work-sync/stdout.log)
 

@@ -49,7 +49,11 @@ UV="${UV:-$(_find_uv)}"
 SKILL_DIR="$VAULT_DIR/.claude/skills/daily-sync-all"
 CALENDAR_SYNC="$VAULT_DIR/.claude/skills/daily-calendar-sync/sync_daily_calendar.sh"
 WORK_SYNC="$VAULT_DIR/.claude/skills/daily-work-sync/scripts/sync_daily_work.py"
-LOG_DIR="${LOG_DIR:-$HOME/Library/Logs/daily-work-sync}"
+if [ "$(uname)" = "Darwin" ]; then
+    LOG_DIR="${LOG_DIR:-$HOME/Library/Logs/daily-work-sync}"
+else
+    LOG_DIR="${LOG_DIR:-/tmp/daily-work-sync}"
+fi
 
 SKIP_INDEX=false
 FORCE_AGENTS=false
@@ -86,7 +90,11 @@ section_is_fresh() {
     ts=$(grep -A2 "$section_marker" "$daily_note" 2>/dev/null | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' | tail -1)
     [ -z "$ts" ] && return 1
     local ts_epoch now_epoch
-    ts_epoch=$(date -j -f "%Y-%m-%d %H:%M" "$ts" "+%s" 2>/dev/null || echo 0)
+    if date -j -f "%Y-%m-%d %H:%M" "$ts" "+%s" &>/dev/null; then
+        ts_epoch=$(date -j -f "%Y-%m-%d %H:%M" "$ts" "+%s")
+    else
+        ts_epoch=$(date -d "$ts" "+%s" 2>/dev/null || echo 0)
+    fi
     now_epoch=$(date +%s)
     local age_min=$(( (now_epoch - ts_epoch) / 60 ))
     [ "$age_min" -lt "$max_age_min" ]

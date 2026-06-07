@@ -4,6 +4,15 @@ prompts:
   - file://prompts/system-user.json
 
 providers:
+  - id: vertex:claude-haiku-4-5
+    label: claude-haiku
+    config:
+      projectId: itpc-gcp-hcm-pe-eng-claude
+      region: us-east5
+      anthropic_version: vertex-2023-10-16
+      max_tokens: 4096
+      temperature: 0
+
   - id: vertex:claude-sonnet-4-6
     label: claude-sonnet
     config:
@@ -62,13 +71,15 @@ tests:
 
         > [!info] Auto-updated on YYYY-MM-DD
 
-        - **[[Person Name]]** — topic summary
-        - *#channel-name* — topic summary (with Participant1, Participant2)
-        - **[[Person Name]]** *(email)* — topic summary
+        - **[[Person Name]]** — topic summary           ← DM (no annotation)
+        - *#channel-name* — topic summary (with Participant1, Participant2)  ← thread
+        - **[[Person Name]]** *(email)* — topic summary  ← email (MUST include *(email)* marker)
 
         Rules:
-        - DMs first (sorted by message count descending), then threads, then emails
+        - DMs first (sorted by message count descending), then threads, then emails last
+        - Email entries MUST be annotated with *(email)* after the person name
         - Combine Slack + email for same person if topics overlap
+        - Omit trivially-mentioned or passing topics (e.g. "brief mention of X") — focus on substantive discussion topics only
         - If a People page exists, use [[wiki-links]]; otherwise use plain name
         - Today's date is 2026-05-07
 
@@ -197,7 +208,7 @@ tests:
       - type: llm-rubric
         value: |
           Evaluate the dossier:
-          1. Role section should mention Senior Software Engineer, HyperShift team, and reporting to Riley Jones
+          1. Role section should mention Senior Software Engineer, a team name (e.g. Platform Engineering or HyperShift), and reporting to Riley Jones
           2. Current Work should have 2-4 bullets grouping: etcd sharding work, CI flakiness investigation, and optionally operator/CAPA work
           3. Recent Activity should have accurate counts: 5 Slack messages, 2 email threads, 3 meetings
           4. Meetings should use wiki-links with display aliases

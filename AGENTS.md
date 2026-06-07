@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Active Portfolio
 
-Jesse Jaggars — engineering manager in Red Hat's Hybrid Cloud Management (HCM) org, focused on Hosted OpenShift (HyperShift/ROSA) platform strategy and engineering productivity.
+Jesse Jaggars — distinguished engineer in Red Hat's Hybrid Platforms org, focused on AI SDLC and Hosted OpenShift (HyperShift/ROSA) platform strategy and engineering productivity.
 
 **Areas of Responsibility:**
 - [[Areas/Engineering Productivity|Engineering Productivity]] — developer tooling, CI/CD, internal platform onboarding

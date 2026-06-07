@@ -46,6 +46,17 @@
   .context-key .swatch { width: 12px; height: 3px; border-radius: 1px; display: inline-block; }
 
   .empty { color: var(--text-muted); font-style: italic; padding: 40px; text-align: center; }
+
+  .sync-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sync-table th { text-align: left; padding: 8px 12px; color: var(--text-muted); border-bottom: 2px solid var(--border); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; cursor: pointer; user-select: none; white-space: nowrap; }
+  .sync-table th:hover { color: var(--text); }
+  .sync-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .sync-table tr:hover td { background: rgba(88,166,255,0.06); }
+  .sync-table .num { text-align: right; }
+  .sync-table .cost { color: var(--accent); font-weight: 600; }
+  .sync-table .fail { color: var(--red); }
+  .sync-table .ok { color: var(--green); }
+  .sync-table .muted { color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -68,6 +79,10 @@
 </div>
 
 <div class="grid">
+  <div class="panel full">
+    <h2>Daily Sync Runs</h2>
+    <div id="syncTableWrap"><p class="empty">Loading…</p></div>
+  </div>
   <div class="panel">
     <h2>Token Usage by Model</h2>
     <div class="chart-wrap"><canvas id="tokenChart"></canvas></div>
@@ -126,6 +141,7 @@ async function fetchJson(endpoint, days) {
   const sep = endpoint.includes('?') ? '&' : '?';
   const url = days ? `/api/${endpoint}${sep}days=${days}` : `/api/${endpoint}`;
   const r = await fetch(url);
+  if (!r.ok) { console.warn(`API ${endpoint}: ${r.status}`); return null; }
   return r.json();
 }
 
@@ -134,6 +150,7 @@ function destroyChart(id) {
 }
 
 function renderSummary(data) {
+  if (!data) return;
   document.getElementById('statRuns').textContent = data.total_runs ?? 0;
   document.getElementById('statAgents').textContent = data.agents ?? 0;
   const cost = data.est_cost_usd != null ? `$${data.est_cost_usd.toFixed(2)}` : '$0.00';
@@ -145,7 +162,7 @@ function renderSummary(data) {
 
 function renderTokens(data) {
   destroyChart('tokenChart');
-  if (!data.length) return;
+  if (!data || !data.length) return;
   const labels = data.map(modelLabel);
   charts.tokenChart = new Chart(document.getElementById('tokenChart'), {
     type: 'bar',
@@ -167,7 +184,7 @@ function renderTokens(data) {
 
 function renderTokps(data) {
   destroyChart('tokpsChart');
-  if (!data.length) return;
+  if (!data || !data.length) return;
   const labels = data.map(modelLabel);
   const datasets = [
     { label: 'Wall tok/s', data: data.map(d => d.wall_tok_per_s), backgroundColor: '#58a6ff' },
@@ -197,6 +214,7 @@ function contextLabel(run) {
 
 function renderContext(data, filter) {
   destroyChart('contextChart');
+  if (!data) return;
   const filterSelect = document.getElementById('contextFilter');
   const agents = [...new Set(data.map(d => d.agent_name))].sort();
 
@@ -257,7 +275,7 @@ function renderContext(data, filter) {
 
 function renderCost(data) {
   destroyChart('costChart');
-  if (!data.length) return;
+  if (!data || !data.length) return;
   const sorted = [...data].reverse();
   const labels = sorted.map(d => d.run_date);
   let cumulative = 0;
@@ -288,7 +306,7 @@ function renderCost(data) {
 
 function renderTools(data) {
   destroyChart('toolChart');
-  if (!data.length) return;
+  if (!data || !data.length) return;
   const labels = data.map(d => `${d.agent_name}\n(${d.model})`);
   const allTools = [...new Set(data.flatMap(d => Object.keys(d.tools)))].sort();
 
@@ -311,6 +329,7 @@ function renderTools(data) {
 
 function renderErrors(data, summary) {
   destroyChart('errorDonut');
+  if (!data || !summary) return;
   const wrap = document.getElementById('errorTableWrap');
 
   const successes = summary.successes ?? 0;
@@ -344,14 +363,86 @@ function renderErrors(data, summary) {
   wrap.innerHTML = html;
 }
 
+function fmtNum(n) {
+  if (n == null) return '—';
+  return n.toLocaleString();
+}
+function fmtTok(n) {
+  if (n == null) return '—';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return n.toString();
+}
+function fmtDuration(s) {
+  if (s == null) return '—';
+  if (s >= 3600) { const h = Math.floor(s/3600); const m = Math.floor((s%3600)/60); return `${h}h ${m}m`; }
+  if (s >= 60) { const m = Math.floor(s/60); const sec = Math.round(s%60); return `${m}m ${sec}s`; }
+  return s.toFixed(1) + 's';
+}
+function fmtCost(c) {
+  if (c == null) return '$0.00';
+  return '$' + c.toFixed(2);
+}
+function fmtRate(succ, fail) {
+  const total = succ + fail;
+  if (total === 0) return '—';
+  return ((succ / total) * 100).toFixed(0) + '%';
+}
+
+function renderSyncRuns(data) {
+  const wrap = document.getElementById('syncTableWrap');
+  if (!data || !data.length) { wrap.innerHTML = '<p class="empty">No scheduled sync runs found</p>'; return; }
+
+  let html = `<table class="sync-table">
+    <thead><tr>
+      <th>Date</th>
+      <th class="num">Runs</th>
+      <th class="num">Agents</th>
+      <th class="num">Steps</th>
+      <th class="num">Cost</th>
+      <th class="num">Wall Time</th>
+      <th class="num">Avg/Run</th>
+      <th class="num">Prompt Tok</th>
+      <th class="num">Completion Tok</th>
+      <th class="num">Total Tok</th>
+      <th class="num">Turns</th>
+      <th class="num">Tool Calls</th>
+      <th class="num">Cache Read</th>
+      <th class="num">Success</th>
+    </tr></thead><tbody>`;
+
+  data.forEach(d => {
+    const failCls = d.failures > 0 ? 'fail' : 'ok';
+    html += `<tr>
+      <td>${d.run_date}</td>
+      <td class="num">${d.total_runs}</td>
+      <td class="num">${d.agents}</td>
+      <td class="num">${d.steps}</td>
+      <td class="num cost">${fmtCost(d.est_cost_usd)}</td>
+      <td class="num">${fmtDuration(d.total_wall_s)}</td>
+      <td class="num muted">${fmtDuration(d.avg_wall_s)}</td>
+      <td class="num">${fmtTok(d.prompt_tokens)}</td>
+      <td class="num">${fmtTok(d.completion_tokens)}</td>
+      <td class="num">${fmtTok(d.total_tokens)}</td>
+      <td class="num">${fmtNum(d.total_turns)}</td>
+      <td class="num">${fmtNum(d.total_tool_calls)}</td>
+      <td class="num muted">${fmtTok(d.cache_read_tokens)}</td>
+      <td class="num ${failCls}">${fmtRate(d.successes, d.failures)}${d.failures > 0 ? ' (' + d.failures + ' ✗)' : ''}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
 async function loadAll() {
   const days = document.getElementById('timeRange').value;
-  const [summary, tokens, tokps, context, cost, errors, tools] = await Promise.all([
+  const [summary, tokens, tokps, context, cost, errors, tools, syncRuns] = await Promise.all([
     fetchJson('summary'), fetchJson('tokens', days), fetchJson('tokps', days),
     fetchJson('context', days), fetchJson('cost', days), fetchJson('errors'),
-    fetchJson('tools', days),
+    fetchJson('tools', days), fetchJson('sync-runs', days),
   ]);
   renderSummary(summary);
+  renderSyncRuns(syncRuns);
   renderTokens(tokens);
   renderTokps(tokps);
   contextData = context;

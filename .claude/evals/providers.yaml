@@ -4,6 +4,16 @@
 
 # --- Vertex AI (Claude baseline) ---
 
+vertex-haiku: &vertex-haiku
+  id: vertex:claude-haiku-4-5
+  label: claude-haiku
+  config:
+    projectId: itpc-gcp-hcm-pe-eng-claude
+    region: us-east5
+    anthropic_version: vertex-2023-10-16
+    max_tokens: 8096
+    temperature: 0
+
 vertex-sonnet: &vertex-sonnet
   id: vertex:claude-sonnet-4-6
   label: claude-sonnet

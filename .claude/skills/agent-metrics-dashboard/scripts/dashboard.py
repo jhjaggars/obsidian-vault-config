@@ -168,6 +168,43 @@ def api_cost():
         db.close()
 
 
+@app.route("/api/sync-runs")
+def api_sync_runs():
+    db = get_db()
+    try:
+        rows = db.execute("""
+            SELECT run_date,
+                COUNT(*) AS total_runs,
+                COUNT(DISTINCT agent_name) AS agents,
+                COUNT(DISTINCT pipeline_step) AS steps,
+                SUM(prompt_tokens) AS prompt_tokens,
+                SUM(completion_tokens) AS completion_tokens,
+                SUM(thinking_tokens) AS thinking_tokens,
+                SUM(prompt_tokens + completion_tokens + thinking_tokens) AS total_tokens,
+                SUM(cache_read_tokens) AS cache_read_tokens,
+                SUM(total_turns) AS total_turns,
+                SUM(total_tool_calls) AS total_tool_calls,
+                ROUND(SUM(wall_time_s), 1) AS total_wall_s,
+                ROUND(MIN(wall_time_s), 1) AS min_wall_s,
+                ROUND(MAX(wall_time_s), 1) AS max_wall_s,
+                ROUND(AVG(wall_time_s), 1) AS avg_wall_s,
+                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS successes,
+                SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) AS failures,
+                ROUND(SUM(CASE WHEN provider IN ('anthropic', 'vertex')
+                    THEN prompt_tokens * 3.0 / 1e6
+                       + completion_tokens * 15.0 / 1e6
+                    ELSE 0 END), 4) AS est_cost_usd
+            FROM agent_runs
+            WHERE trigger = 'scheduled'
+            GROUP BY run_date
+            ORDER BY run_date DESC
+            LIMIT ?
+        """, (int(days_param()),)).fetchall()
+        return jsonify(rows_to_dicts(rows))
+    finally:
+        db.close()
+
+
 @app.route("/api/errors")
 def api_errors():
     db = get_db()
