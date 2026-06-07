@@ -121,6 +121,9 @@ def glob(pattern: str, path: str = None) -> str:
                 return str(p)
             return f"No matches found (absolute path outside vault: {pattern})"
     if pattern.startswith("**"):
+        # Normalize **X to **/*X so rglob gets a valid path component separator
+        if not pattern.startswith("**/"):
+            pattern = "**/" + pattern[2:]
         matches = sorted(str(p) for p in base.rglob(pattern.removeprefix("**/")))
     else:
         matches = sorted(str(p) for p in base.glob(pattern))
